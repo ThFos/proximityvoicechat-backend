@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Chat | PGG Legacy</title>
+    <meta name="robots" content="noindex, nofollow">
+
+    <link rel="icon" type="image/png" href="https://pgglegacy.gr/media/favicon.png">
+    <link href="https://fonts.bunny.net/css?family=Space+Grotesk:wght@500;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --roundness: 0.75rem;
+            --accent1: #6b2dd8;
+            --accent2: #521eb8;
+            --accent2-transp: rgba(82, 30, 184, 0.33);
+            --bg1: #1a1921;
+            --bg2: #121117;
+            --text-muted: rgba(255, 255, 255, 0.7);
+            --border-subtle: rgba(255, 255, 255, 0.05);
+            --transition-std: 0.3s ease;
+            color-scheme: dark;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            width: 100%;
+            min-height: 100vh;
+            font-family: 'Space Grotesk', sans-serif;
+            background-color: var(--bg1);
+            color: #fff;
+        }
+
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+
+        .logo {
+            display: block;
+            width: 220px;
+            height: auto;
+            margin: 0 auto 1.5rem;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 420px;
+            background: var(--bg2);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--roundness);
+            padding: 2.5rem 2rem;
+            text-align: center;
+            transition: border-color var(--transition-std);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            margin-bottom: 1.75rem;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        /* ===== LINK SCREEN - Input style όπως το form-group του police form ===== */
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            margin-bottom: 1.25rem;
+        }
+
+        #codeInput {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 6px;
+            padding: 0.9rem;
+            color: #fff;
+            font-family: inherit;
+            font-size: 1.5rem;
+            text-align: center;
+            letter-spacing: 6px;
+            text-transform: uppercase;
+            outline: none;
+            transition: border-color var(--transition-std), box-shadow var(--transition-std);
+        }
+
+        #codeInput::placeholder {
+            color: rgba(255, 255, 255, 0.25);
+            letter-spacing: 6px;
+        }
+
+        #codeInput:focus {
+            border-color: var(--accent1);
+            box-shadow: 0 0 0 3px rgba(107, 45, 216, 0.2);
+        }
+
+        /* ===== Button style όπως το discord-btn ===== */
+        button {
+            display: inline-block;
+            width: 100%;
+            padding: 0.85rem 1.5rem;
+            color: #fff;
+            text-align: center;
+            font-family: inherit;
+            font-weight: 700;
+            font-size: 1rem;
+            text-decoration: none;
+            border: 1px solid var(--accent1);
+            border-radius: var(--roundness);
+            background: transparent;
+            cursor: pointer;
+            transition: all var(--transition-std);
+        }
+
+        button:hover:not(:disabled) {
+            border-color: var(--accent2);
+            background: var(--accent2);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #errorMsg {
+            color: #ff4d4d;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            min-height: 20px;
+            font-weight: 600;
+        }
+
+        /* ===== CONNECTED SCREEN ===== */
+        #connectedScreen { display: none; }
+
+        .status-box {
+            background: var(--bg1);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--roundness);
+            padding: 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        #playerName {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 0.3rem;
+        }
+
+        #micStatus {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .mic-toggle {
+            border-color: #ff4d4d;
+            margin-bottom: 1.75rem;
+        }
+
+        .mic-toggle:hover {
+            background: #ff4d4d;
+            border-color: #ff4d4d;
+        }
+
+        .mic-toggle.muted {
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .mic-toggle.muted:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* ===== Nearby Players List - όπως .list-item του leaderboard ===== */
+        .nearby-title {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-align: left;
+            font-weight: 700;
+        }
+
+        .player-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg1);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--roundness);
+            padding: 0.8rem 1rem;
+            margin-bottom: 0.6rem;
+            transition: transform var(--transition-std), border-color var(--transition-std);
+        }
+
+        .player-item:hover {
+            transform: translateX(4px);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .player-info { text-align: left; }
+
+        .player-name {
+            font-weight: 700;
+            font-size: 1rem;
+        }
+
+        .player-distance {
+            font-size: 0.8rem;
+            color: var(--accent1);
+        }
+
+        .volume-bar {
+            width: 60px;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .volume-fill {
+            height: 100%;
+            background: var(--accent1);
+            transition: width 0.2s;
+        }
+
+        .no-players {
+            color: var(--text-muted);
+            text-align: center;
+            padding: 1.5rem;
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 480px) {
+            .container { padding: 1.75rem 1.25rem; }
+            .logo { width: 180px; }
+        }
+    </style>
+</head>
+<body>
+
+<div style="width: 100%; max-width: 420px;">
+    <img class="logo" src="https://pgglegacy.gr/media/logo.svg" alt="PGG Legacy">
+
+    <!-- ========== LINK CODE SCREEN ========== -->
+    <div class="container" id="linkScreen">
+        <h1>🎤 Voice Chat</h1>
+        <p class="subtitle">Γράψε <strong>/vc</strong> στο Minecraft chat και εισάγαγε τον κωδικό που θα λάβεις</p>
+
+        <div class="form-group">
+            <input type="text" id="codeInput" maxlength="6" placeholder="------" autocomplete="off">
+        </div>
+        <button id="linkButton" onclick="submitLinkCode()">Σύνδεση</button>
+
+        <div id="errorMsg"></div>
+    </div>
+
+    <!-- ========== CONNECTED SCREEN ========== -->
+    <div class="container" id="connectedScreen">
+        <div class="status-box">
+            <div id="playerName">-</div>
+            <div id="micStatus">🎤 Μικρόφωνο: Ενεργό</div>
+        </div>
+
+        <button class="mic-toggle" id="micToggleBtn" onclick="toggleMic()">🔇 Σίγαση Μικροφώνου</button>
+
+        <div class="nearby-title">Κοντινοί Παίκτες</div>
+        <div id="nearbyPlayers">
+            <div class="no-players">Κανένας παίκτης κοντά σου</div>
+        </div>
+    </div>
+</div>
+
+<script src="client.js"></script>
+</body>
+</html>
