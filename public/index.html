@@ -163,7 +163,7 @@
 
         .mic-toggle {
             border-color: #ff4d4d;
-            margin-bottom: 1.75rem;
+            margin-bottom: 1.25rem;
         }
 
         .mic-toggle:hover {
@@ -176,6 +176,73 @@
         }
 
         .mic-toggle.muted:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* ===== VOLUME SLIDER (ΝΕΟ) ===== */
+        .volume-section {
+            background: var(--bg1);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--roundness);
+            padding: 1rem 1.1rem;
+            margin-bottom: 1.75rem;
+        }
+
+        .volume-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.7rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .volume-label-row span.value {
+            color: var(--accent1);
+            font-weight: 700;
+        }
+
+        #masterVolumeSlider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 5px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+            cursor: pointer;
+            padding: 0;
+            border: none;
+        }
+
+        #masterVolumeSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent1);
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--accent2-transp);
+            transition: transform var(--transition-std);
+        }
+
+        #masterVolumeSlider::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+        }
+
+        #masterVolumeSlider::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--accent1);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 8px var(--accent2-transp);
+        }
+
+        #masterVolumeSlider::-moz-range-track {
+            height: 5px;
+            border-radius: 3px;
             background: rgba(255, 255, 255, 0.1);
         }
 
@@ -273,6 +340,15 @@
         </div>
 
         <button class="mic-toggle" id="micToggleBtn" onclick="toggleMic()">🔇 Σίγαση Μικροφώνου</button>
+
+        <!-- ========== VOLUME SLIDER (ΝΕΟ) ========== -->
+        <div class="volume-section">
+            <div class="volume-label-row">
+                <span>🔊 Γενική Ένταση</span>
+                <span class="value" id="volumeValueDisplay">100%</span>
+            </div>
+            <input type="range" id="masterVolumeSlider" min="0" max="100" value="100">
+        </div>
 
         <div class="nearby-title">Κοντινοί Παίκτες</div>
         <div id="nearbyPlayers">

@@ -37,7 +37,11 @@ let myUuid = null;
 let myName = null;
 let localStream = null;
 let micEnabled = true;
-let audioCtx = null; // ✅ ΝΕΟ: Web Audio API context
+let audioCtx = null;
+let masterGainNode = null;
+
+let masterVolume = parseFloat(localStorage.getItem('vc_masterVolume'));
+if (isNaN(masterVolume)) masterVolume = 1.0;
 
 const peers = new Map();
 
@@ -52,6 +56,8 @@ const errorMsg = document.getElementById('errorMsg');
 const playerNameEl = document.getElementById('playerName');
 const nearbyPlayersEl = document.getElementById('nearbyPlayers');
 const micToggleBtn = document.getElementById('micToggleBtn');
+const masterVolumeSlider = document.getElementById('masterVolumeSlider');
+const volumeValueDisplay = document.getElementById('volumeValueDisplay');
 
 codeInput.addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
@@ -62,11 +68,40 @@ codeInput.addEventListener('keypress', (e) => {
 });
 
 // ============================================
+// Master Volume Slider Wiring
+// ============================================
+if (masterVolumeSlider) {
+    masterVolumeSlider.value = Math.round(masterVolume * 100);
+    if (volumeValueDisplay) {
+        volumeValueDisplay.textContent = `${Math.round(masterVolume * 100)}%`;
+    }
+
+    masterVolumeSlider.addEventListener('input', (e) => {
+        const val = e.target.value / 100;
+        setMasterVolume(val);
+        if (volumeValueDisplay) {
+            volumeValueDisplay.textContent = `${e.target.value}%`;
+        }
+    });
+}
+
+function setMasterVolume(value) {
+    masterVolume = value;
+    localStorage.setItem('vc_masterVolume', value);
+    if (masterGainNode) {
+        masterGainNode.gain.value = value;
+    }
+}
+
+// ============================================
 // Web Audio API Context (lazy init, μέσα σε user gesture)
 // ============================================
 function getAudioContext() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        masterGainNode = audioCtx.createGain();
+        masterGainNode.gain.value = masterVolume;
+        masterGainNode.connect(audioCtx.destination);
     }
     if (audioCtx.state === 'suspended') {
         audioCtx.resume();
@@ -110,8 +145,6 @@ function submitLinkCode() {
         return;
     }
 
-    // ✅ Δημιουργούμε το AudioContext ΜΕΣΑ στο click handler
-    // για να "κλειδώσει" το user gesture (σημαντικό για iOS Safari)
     getAudioContext();
 
     linkButton.disabled = true;
@@ -258,14 +291,9 @@ function createPeerConnection(targetUuid, targetName) {
         pc.addTrack(track, localStream);
     });
 
-    // ✅ ΝΕΟ: Πλήρες Web Audio API graph
     pc.ontrack = (event) => {
         const remoteStream = event.streams[0];
 
-        // --- Workaround για Safari/WebKit bug ---
-        // Το remote stream πρέπει να είναι attached σε playing <audio>
-        // element αλλιώς δεν "τρέχει" σωστά μέσα στο Web Audio API graph.
-        // Το κάνουμε muted γιατί ο πραγματικός ήχος θα βγει από το graph.
         const audioEl = document.createElement('audio');
         audioEl.srcObject = remoteStream;
         audioEl.autoplay = true;
@@ -281,14 +309,12 @@ function createPeerConnection(targetUuid, targetName) {
             });
         }
 
-        // --- Πραγματικό audio processing graph ---
         const ctx = getAudioContext();
         const source = ctx.createMediaStreamSource(remoteStream);
         const compressor = ctx.createDynamicsCompressor();
         const gainNode = ctx.createGain();
         const pannerNode = ctx.createStereoPanner();
 
-        // Compressor settings: εξομαλύνει δυνατά/σιγανά μικρόφωνα
         compressor.threshold.setValueAtTime(-50, ctx.currentTime);
         compressor.knee.setValueAtTime(40, ctx.currentTime);
         compressor.ratio.setValueAtTime(12, ctx.currentTime);
@@ -298,7 +324,7 @@ function createPeerConnection(targetUuid, targetName) {
         source.connect(compressor);
         compressor.connect(gainNode);
         gainNode.connect(pannerNode);
-        pannerNode.connect(ctx.destination);
+        pannerNode.connect(masterGainNode);
 
         const peerData = peers.get(targetUuid);
         if (peerData) {
@@ -323,15 +349,6 @@ function createPeerConnection(targetUuid, targetName) {
 
     pc.onconnectionstatechange = () => {
         console.log(`Connection with ${targetName}: ${pc.connectionState}`);
-
-        let statusEl = document.getElementById('debugStatus');
-        if (!statusEl) {
-            statusEl = document.createElement('div');
-            statusEl.id = 'debugStatus';
-            statusEl.style.cssText = 'position:fixed;bottom:10px;left:10px;right:10px;background:#000;color:#0f0;padding:8px;font-size:11px;z-index:9999;border-radius:8px;font-family:monospace;';
-            document.body.appendChild(statusEl);
-        }
-        statusEl.textContent = `${targetName}: ${pc.connectionState}`;
     };
 
     peers.set(targetUuid, {
@@ -439,12 +456,12 @@ function showEnableAudioButton() {
     btn.textContent = '🔊 Πάτα εδώ για να ενεργοποιηθεί ο ήχος';
     btn.style.cssText = `
         position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
-        background: #6b2dd8; color: white; border: none; padding: 12px 20px;
+        background: #6b2dd8; color: white; border: 1px solid #521eb8; padding: 12px 20px;
         border-radius: 0.75rem; font-family: 'Space Grotesk', sans-serif;
-        font-size: 14px; z-index: 9999; cursor: pointer;
+        font-size: 14px; z-index: 9999; cursor: pointer; width: auto;
     `;
     btn.onclick = () => {
-        getAudioContext(); // resume αν χρειάζεται
+        getAudioContext();
         peers.forEach(peerData => {
             if (peerData.audioElement) {
                 peerData.audioElement.play().catch(e => console.error('Still blocked:', e));
@@ -468,7 +485,6 @@ function calculateVolume(distance) {
     return ratio;
 }
 
-// ✅ ΝΕΟ: Ενημερώνει gain (ένταση) ΚΑΙ pan (κατεύθυνση)
 function updatePeerAudio(uuid, distance, angle) {
     const peerData = peers.get(uuid);
     if (!peerData) return;
@@ -482,11 +498,10 @@ function updatePeerAudio(uuid, distance, angle) {
 
     if (peerData.pannerNode) {
         if (ENABLE_3D_AUDIO && typeof angle === 'number') {
-            // sin(angle) δίνει ομαλή μετάβαση -1 (αριστερά) έως 1 (δεξιά)
             const panValue = Math.sin(angle * Math.PI / 180);
             peerData.pannerNode.pan.value = panValue;
         } else {
-            peerData.pannerNode.pan.value = 0; // κέντρο αν είναι off
+            peerData.pannerNode.pan.value = 0;
         }
     }
 }
