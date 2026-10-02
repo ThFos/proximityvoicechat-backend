@@ -72,6 +72,9 @@ minecraftWSS.on('connection', (ws) => {
 });
 
 function handleLocationUpdate(players) {
+    // ✅ FIX: Καθαρίζουμε πρώτα τη λίστα ώστε να μη μένουν "ghost" παίκτες
+    playerLocations.clear();
+
     players.forEach(player => {
         playerLocations.set(player.uuid, {
             name: player.name,
@@ -173,7 +176,7 @@ function handleLinkCode(ws, code) {
 
 function relayWebRTCMessage(message) {
     const targetWs = uuidToWs.get(message.targetUuid);
-    if (targetWs) {
+    if (targetWs && targetWs.readyState === targetWs.OPEN) {
         targetWs.send(JSON.stringify(message));
     }
 }
