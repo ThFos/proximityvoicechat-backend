@@ -1,0 +1,16 @@
+{
+  "name": "voicechatbackend",
+  "version": "1.0.0",
+  "description": "Backend for Minecraft Proximity Voice Chat",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.14.2"
+  },
+  "author": "",
+  "license": "ISC"
+}
