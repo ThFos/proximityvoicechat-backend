@@ -39,15 +39,66 @@
             flex-direction: column;
         }
 
-        /* ===== NAVBAR (ίδιο στυλ με pgglegacy.gr) ===== */
+        /* ==========================================================================
+           CUSTOM CURSOR (ίδιο με pgglegacy.gr)
+           ========================================================================== */
+        @media (hover: hover) and (pointer: fine) {
+            * {
+                cursor: none !important;
+            }
+
+            .custom-cursor {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 14px;
+                height: 14px;
+                border: 2px solid var(--accent1);
+                border-radius: 50%;
+                pointer-events: none;
+                z-index: 99999;
+                will-change: transform;
+                transform: translate(-50%, -50%);
+            }
+
+            .cursor-glow {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 280px;
+                height: 280px;
+                background: radial-gradient(
+                        circle,
+                        rgba(107, 45, 216, 0.12) 0%,
+                        transparent 70%
+                );
+                border-radius: 50%;
+                pointer-events: none;
+                z-index: 1;
+                transition: transform 0.04s linear;
+                will-change: transform;
+                transform: translate(-50%, -50%);
+            }
+        }
+
+        @media (hover: none), (pointer: coarse) {
+            .custom-cursor,
+            .cursor-glow {
+                display: none !important;
+            }
+        }
+
+        /* ==========================================================================
+           NAVBAR (ακριβές στυλ όπως pgglegacy.gr)
+           ========================================================================== */
         .voice_navbar {
             position: fixed;
             inset: 0 0 auto 0;
             display: flex;
+            height: 5.2rem;
             align-items: center;
             justify-content: space-between;
-            height: 5.2rem;
-            padding: 0 1.5rem 0 1.5rem;
+            padding: 0 1.5rem;
             background: rgba(0, 0, 0, 0.4);
             backdrop-filter: blur(15px);
             -webkit-backdrop-filter: blur(15px);
@@ -57,12 +108,17 @@
         .voice_navbar_logo_img {
             width: 9.5rem;
             height: auto;
+            transition: transform var(--transition-std);
+        }
+
+        .voice_navbar_logo_img:hover {
+            transform: scale(1.05);
         }
 
         .voice_navbar_back {
-            font-size: 0.95rem;
+            font-size: 1.05rem;
             font-weight: 700;
-            padding: 0.6rem 1.1rem;
+            padding: 0.5rem 1rem;
             text-decoration: none;
             color: #fff;
             border: 1px solid var(--accent1);
@@ -74,6 +130,30 @@
         .voice_navbar_back:hover {
             border-color: var(--accent2);
             background: var(--accent2);
+            transform: scale(1.05);
+        }
+
+        @media (max-width: 768px) {
+            .voice_navbar {
+                height: 60px;
+                background: rgba(18, 17, 23, 0.9);
+                border-bottom: 1px solid var(--border-subtle);
+                padding: 0 1rem;
+            }
+
+            .voice_navbar_logo_img {
+                width: auto;
+                height: 36px;
+            }
+
+            .voice_navbar_back {
+                font-size: 0.85rem;
+                padding: 0.5rem 0.8rem;
+            }
+
+            .voice_main {
+                padding-top: calc(60px + 2rem);
+            }
         }
 
         /* ===== MAIN CONTENT ===== */
@@ -376,16 +456,90 @@
 
         .copyright a:hover { color: #fff; }
 
+        /* ==========================================================================
+           ANIMATIONS (ίδιο με pgglegacy.gr)
+           ========================================================================== */
+        @keyframes floatLogo {
+            0%, 100% { transform: translateY(0); }
+            50%      { transform: translateY(-8px); }
+        }
+
+        @keyframes neonPulse {
+            0%, 100% {
+                box-shadow:
+                        0 0 8px rgba(107, 45, 216, 0.35),
+                        0 0 18px rgba(107, 45, 216, 0.15);
+            }
+            50% {
+                box-shadow:
+                        0 0 18px rgba(107, 45, 216, 0.7),
+                        0 0 32px rgba(107, 45, 216, 0.4);
+            }
+        }
+
+        [data-aos] {
+            opacity: 0;
+            transition: opacity 0.8s ease, transform 0.8s ease;
+        }
+
+        [data-aos="fade-up"] { transform: translateY(28px); }
+        [data-aos="zoom-in"] { transform: scale(0.92); }
+
+        [data-aos].aos-animate {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        .logo {
+            animation: floatLogo 4s ease-in-out infinite;
+        }
+
+        button:hover:not(:disabled) {
+            animation: neonPulse 1.8s ease-in-out infinite;
+        }
+
+        /* ==========================================================================
+           ACCESSIBILITY (ίδιο με pgglegacy.gr)
+           ========================================================================== */
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+            [data-aos] {
+                opacity: 1 !important;
+                transform: none !important;
+            }
+            .logo {
+                animation: none !important;
+            }
+        }
+
+        @media (forced-colors: active) {
+            button,
+            .voice_navbar_back {
+                border: 2px solid ButtonText;
+            }
+        }
+
         @media (max-width: 480px) {
             .container { padding: 1.75rem 1.25rem; }
             .logo { width: 170px; }
-            .voice_navbar { padding: 0 1rem; }
-            .voice_navbar_logo_img { width: 7.5rem; }
-            .voice_navbar_back { font-size: 0.85rem; padding: 0.5rem 0.8rem; }
+        }
+
+        @media (max-width: 400px) {
+            h1 { font-size: 1.3rem; }
+            .logo { width: 150px; }
         }
     </style>
 </head>
 <body>
+
+<div class="custom-cursor" id="cursor" aria-hidden="true"></div>
+<div class="cursor-glow" id="cursorGlow" aria-hidden="true"></div>
 
 <nav class="voice_navbar" aria-label="Voice Chat Navigation">
     <a href="https://pgglegacy.gr" aria-label="PGG Legacy - Αρχική">
@@ -396,10 +550,10 @@
 
 <main class="voice_main">
     <div style="width: 100%; max-width: 420px;">
-        <img class="logo" src="https://pgglegacy.gr/media/logo.svg" alt="PGG Legacy">
+        <img class="logo" src="https://pgglegacy.gr/media/logo.svg" alt="PGG Legacy" data-aos="zoom-in">
 
         <!-- ========== LINK CODE SCREEN ========== -->
-        <div class="container" id="linkScreen">
+        <div class="container" id="linkScreen" data-aos="fade-up" data-aos-delay="100">
             <h1>🎤 Voice Chat</h1>
             <p class="subtitle">Γράψε <strong>/vc</strong> στο Minecraft chat και εισάγαγε τον κωδικό που θα λάβεις</p>
 
@@ -412,7 +566,7 @@
         </div>
 
         <!-- ========== CONNECTED SCREEN ========== -->
-        <div class="container" id="connectedScreen">
+        <div class="container" id="connectedScreen" data-aos="fade-up">
             <div class="status-box">
                 <div id="playerName">-</div>
                 <div id="micStatus">🎤 Μικρόφωνο: Ενεργό</div>
@@ -446,6 +600,30 @@
 
 <script>
     document.getElementById('copyright-year').textContent = new Date().getFullYear();
+
+    // Fade-in animations
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function() {
+            document.querySelectorAll('[data-aos]').forEach(function(el) {
+                el.classList.add('aos-animate');
+            });
+        }, 50);
+    });
+
+    // Custom cursor
+    (function() {
+        var cursor = document.getElementById('cursor');
+        var glow = document.getElementById('cursorGlow');
+        if (!cursor || !glow) return;
+
+        var hasFinePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (!hasFinePointer) return;
+
+        document.addEventListener('mousemove', function(e) {
+            cursor.style.transform = 'translate(' + e.clientX + 'px, ' + e.clientY + 'px) translate(-50%, -50%)';
+            glow.style.transform = 'translate(' + e.clientX + 'px, ' + e.clientY + 'px) translate(-50%, -50%)';
+        });
+    })();
 </script>
 <script src="client.js"></script>
 </body>
