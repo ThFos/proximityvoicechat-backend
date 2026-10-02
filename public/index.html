@@ -36,7 +36,6 @@
 
         body { display: flex; flex-direction: column; }
 
-        /* ===== CUSTOM CURSOR ===== */
         @media (hover: hover) and (pointer: fine) {
             * { cursor: none !important; }
 
@@ -66,7 +65,6 @@
             .custom-cursor, .cursor-glow { display: none !important; }
         }
 
-        /* ===== NAVBAR ===== */
         .voice_navbar {
             position: fixed; inset: 0 0 auto 0;
             display: flex; height: 5.2rem;
@@ -113,7 +111,6 @@
             .voice_main { padding-top: calc(60px + 2rem); }
         }
 
-        /* ===== MAIN CONTENT ===== */
         .voice_main {
             flex: 1; display: flex;
             align-items: center; justify-content: center;
@@ -209,7 +206,6 @@
         #playerName { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem; }
         #micStatus { font-size: 0.9rem; color: var(--text-muted); }
 
-        /* ===== Mic Mode Toggle (ΝΕΟ) ===== */
         .mic-mode-toggle {
             display: flex;
             gap: 0.5rem;
@@ -249,6 +245,48 @@
             display: none;
         }
 
+        .shortcuts-section {
+            background: var(--bg1);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--roundness);
+            padding: 1rem 1.1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .shortcuts-title {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            text-align: left;
+        }
+
+        .shortcuts-row {
+            display: flex;
+            gap: 0.6rem;
+        }
+
+        .key-btn {
+            flex: 1;
+            font-size: 0.82rem;
+            padding: 0.6rem 0.5rem;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .key-btn:hover {
+            border-color: var(--accent1);
+            background: var(--accent2-transp);
+        }
+
+        .key-btn.listening {
+            border-color: var(--accent1);
+            background: rgba(107, 45, 216, 0.2);
+            animation: neonPulse 1s ease-in-out infinite;
+        }
+
         .mic-toggle {
             border-color: #ff4d4d;
             margin-bottom: 0.75rem;
@@ -262,7 +300,6 @@
 
         .mic-toggle.muted:hover { background: rgba(255, 255, 255, 0.1); }
 
-        /* ===== Deafen Button (ΝΕΟ) ===== */
         .deafen-toggle {
             border-color: #ff9f43;
             margin-bottom: 1.25rem;
@@ -276,7 +313,6 @@
             color: #ff9f43;
         }
 
-        /* ===== VOLUME SLIDER ===== */
         .volume-section {
             background: var(--bg1);
             border: 1px solid var(--border-subtle);
@@ -336,7 +372,6 @@
             background: rgba(255, 255, 255, 0.1);
         }
 
-        /* ===== Nearby Players List ===== */
         .nearby-title {
             font-size: 0.8rem;
             color: var(--text-muted);
@@ -364,7 +399,6 @@
             border-color: rgba(255, 255, 255, 0.15);
         }
 
-        /* ✅ ΝΕΟ: Glow όταν μιλάει */
         .player-item.speaking {
             border-color: rgba(62, 207, 142, 0.5);
             box-shadow: 0 0 12px rgba(62, 207, 142, 0.15);
@@ -372,7 +406,6 @@
 
         .player-info { text-align: left; flex: 1; }
 
-        /* ✅ ΝΕΟ: Row με όνομα + speaking dot + arrow + quality */
         .player-name-row {
             display: flex;
             align-items: center;
@@ -382,7 +415,6 @@
 
         .player-name { font-weight: 700; font-size: 1rem; }
 
-        /* ✅ ΝΕΟ: Speaking indicator dot */
         .speaking-dot {
             width: 8px;
             height: 8px;
@@ -404,7 +436,6 @@
             50% { transform: scale(1.35); }
         }
 
-        /* ✅ ΝΕΟ: Direction arrow */
         .direction-arrow {
             display: inline-block;
             font-size: 0.8rem;
@@ -412,7 +443,6 @@
             transition: transform 0.25s ease;
         }
 
-        /* ✅ ΝΕΟ: Connection quality icon */
         .quality-icon {
             font-size: 0.72rem;
             margin-left: auto;
@@ -450,7 +480,6 @@
             font-size: 0.9rem;
         }
 
-        /* ===== FOOTER ===== */
         .copyright_div {
             width: 100%;
             display: flex;
@@ -464,7 +493,6 @@
         .copyright a { color: var(--text-muted); text-decoration: underline; transition: color 0.2s ease; }
         .copyright a:hover { color: #fff; }
 
-        /* ===== ANIMATIONS ===== */
         @keyframes floatLogo {
             0%, 100% { transform: translateY(0); }
             50% { transform: translateY(-8px); }
@@ -487,7 +515,6 @@
         .logo { animation: floatLogo 4s ease-in-out infinite; }
         button:hover:not(:disabled) { animation: neonPulse 1.8s ease-in-out infinite; }
 
-        /* ===== ACCESSIBILITY ===== */
         @media (prefers-reduced-motion: reduce) {
             *, *::before, *::after {
                 animation-duration: 0.01ms !important;
@@ -529,7 +556,6 @@
     <div style="width: 100%; max-width: 420px;">
         <img class="logo" src="https://pgglegacy.gr/media/logo.svg" alt="PGG Legacy" data-aos="zoom-in">
 
-        <!-- ========== LINK CODE SCREEN ========== -->
         <div class="container" id="linkScreen" data-aos="fade-up" data-aos-delay="100">
             <h1>🎤 Voice Chat</h1>
             <p class="subtitle">Γράψε <strong>/vc</strong> στο Minecraft chat και εισάγαγε τον κωδικό που θα λάβεις</p>
@@ -542,27 +568,31 @@
             <div id="errorMsg"></div>
         </div>
 
-        <!-- ========== CONNECTED SCREEN ========== -->
         <div class="container" id="connectedScreen" data-aos="fade-up">
             <div class="status-box">
                 <div id="playerName">-</div>
                 <div id="micStatus">🎤 Μικρόφωνο: Ενεργό</div>
             </div>
 
-            <!-- ✅ ΝΕΟ: Mic Mode Toggle -->
             <div class="mic-mode-toggle">
-                <button id="modeOpenBtn" class="mode-btn active" onclick="setMicMode('open')" type="button">🎙️ Ανοιχτό Μικρόφωνο</button>
-                <button id="modePttBtn" class="mode-btn" onclick="setMicMode('ptt')" type="button">⌨️ Push-to-Talk</button>
+                <button type="button" id="modeOpenBtn" class="mode-btn active" onclick="setMicMode('open')">🎙️ Ανοιχτό Μικρόφωνο</button>
+                <button type="button" id="modePttBtn" class="mode-btn" onclick="setMicMode('ptt')">⌨️ Push-to-Talk</button>
             </div>
 
             <div id="pttHint">Κράτα πατημένο το <strong>V</strong> για να μιλήσεις</div>
 
+            <div class="shortcuts-section">
+                <div class="shortcuts-title">⌨️ Keyboard Shortcuts</div>
+                <div class="shortcuts-row">
+                    <button type="button" id="muteKeyBtn" class="key-btn">Mute: M</button>
+                    <button type="button" id="pttKeyBtn" class="key-btn">PTT: V</button>
+                </div>
+            </div>
+
             <button class="mic-toggle" id="micToggleBtn" onclick="toggleMic()">🔇 Σίγαση Μικροφώνου</button>
 
-            <!-- ✅ ΝΕΟ: Deafen Button -->
             <button class="deafen-toggle" id="deafenToggleBtn" onclick="toggleDeafen()">🙉 Κλείσιμο Ήχου (Deafen)</button>
 
-            <!-- VOLUME SLIDER -->
             <div class="volume-section">
                 <div class="volume-label-row">
                     <span>🔊 Γενική Ένταση</span>

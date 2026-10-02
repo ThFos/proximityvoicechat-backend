@@ -29,7 +29,7 @@ const ICE_SERVERS = {
     ]
 };
 
-const SPEAKING_THRESHOLD = 15; // 0-255, πόσο δυνατό πρέπει να είναι το audio για να θεωρηθεί "μιλάει"
+const SPEAKING_THRESHOLD = 15;
 
 // ============================================
 // STATE
@@ -45,6 +45,10 @@ let isDeafened = false;
 
 let micMode = localStorage.getItem('vc_micMode') || 'open'; // 'open' | 'ptt'
 let pttKeyDown = false;
+
+let muteKey = localStorage.getItem('vc_muteKey') || 'm';
+let pttKey = localStorage.getItem('vc_pttKey') || 'v';
+let listeningForKey = null; // null | 'mute' | 'ptt'
 
 let masterVolume = parseFloat(localStorage.getItem('vc_masterVolume'));
 if (isNaN(masterVolume)) masterVolume = 1.0;
@@ -69,6 +73,8 @@ const modeOpenBtn = document.getElementById('modeOpenBtn');
 const modePttBtn = document.getElementById('modePttBtn');
 const pttHint = document.getElementById('pttHint');
 const micStatusEl = document.getElementById('micStatus');
+const muteKeyBtn = document.getElementById('muteKeyBtn');
+const pttKeyBtn = document.getElementById('pttKeyBtn');
 
 codeInput.addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
@@ -105,7 +111,7 @@ function setMasterVolume(value) {
 }
 
 // ============================================
-// Web Audio API Context (lazy init, μέσα σε user gesture)
+// Web Audio API Context
 // ============================================
 function getAudioContext() {
     if (!audioCtx) {
@@ -255,8 +261,8 @@ async function onLinkSuccess(message) {
         connectedScreen.style.display = 'block';
         playerNameEl.textContent = myName;
 
-        // Αρχικοποίηση mic mode (Open / PTT) μετά την απόκτηση microphone access
         setMicMode(micMode);
+        updateKeyButtonLabels();
 
     } catch (err) {
         console.error('Microphone access denied:', err.name, err.message);
@@ -326,7 +332,7 @@ function createPeerConnection(targetUuid, targetName) {
         const ctx = getAudioContext();
         const source = ctx.createMediaStreamSource(remoteStream);
         const compressor = ctx.createDynamicsCompressor();
-        const analyser = ctx.createAnalyser(); // ✅ ΝΕΟ: για speaking detection
+        const analyser = ctx.createAnalyser();
         const gainNode = ctx.createGain();
         const pannerNode = ctx.createStereoPanner();
 
@@ -338,7 +344,6 @@ function createPeerConnection(targetUuid, targetName) {
 
         analyser.fftSize = 512;
 
-        // Audio graph: source -> compressor -> [analyser tap] -> gain -> panner -> master
         source.connect(compressor);
         compressor.connect(analyser);
         compressor.connect(gainNode);
@@ -472,7 +477,7 @@ function closePeerConnection(uuid) {
 }
 
 // ============================================
-// Audio Enable Fallback Button (autoplay block)
+// Audio Enable Fallback Button
 // ============================================
 function showEnableAudioButton() {
     if (document.getElementById('enableAudioBtn')) return;
@@ -533,7 +538,7 @@ function updatePeerAudio(uuid, distance, angle) {
 }
 
 // ============================================
-// ✅ ΝΕΟ: Speaking Detection Loop
+// Speaking Detection Loop
 // ============================================
 function updateSpeakingIndicators() {
     peers.forEach((peerData, uuid) => {
@@ -563,7 +568,7 @@ function updateSpeakingIndicators() {
 setInterval(updateSpeakingIndicators, 100);
 
 // ============================================
-// ✅ ΝΕΟ: Connection Quality Monitoring
+// Connection Quality Monitoring
 // ============================================
 async function updateConnectionQuality() {
     for (const [uuid, peerData] of peers.entries()) {
@@ -596,7 +601,7 @@ async function updateConnectionQuality() {
                 icon.className = 'quality-icon quality-' + quality;
             }
         } catch (err) {
-            // αγνόησε σιωπηλά, όχι κρίσιμο
+            // αγνόησε σιωπηλά
         }
     }
 }
@@ -638,8 +643,8 @@ function renderNearbyPlayersList(nearbyPlayers) {
 // Mic Toggle (Open Mic mode)
 // ============================================
 function toggleMic() {
-    if (micMode === 'ptt') return; // δεν εφαρμόζεται σε PTT mode
-    if (isDeafened) return; // δεν μπορείς να unmute ενώ είσαι deafened
+    if (micMode === 'ptt') return;
+    if (isDeafened) return;
 
     micEnabled = !micEnabled;
 
@@ -661,7 +666,7 @@ function toggleMic() {
 }
 
 // ============================================
-// ✅ ΝΕΟ: Mic Mode (Open / Push-to-Talk)
+// Mic Mode (Open / Push-to-Talk)
 // ============================================
 function setMicMode(mode) {
     micMode = mode;
@@ -669,7 +674,10 @@ function setMicMode(mode) {
 
     if (modeOpenBtn) modeOpenBtn.classList.toggle('active', mode === 'open');
     if (modePttBtn) modePttBtn.classList.toggle('active', mode === 'ptt');
-    if (pttHint) pttHint.style.display = mode === 'ptt' ? 'block' : 'none';
+    if (pttHint) {
+        pttHint.style.display = mode === 'ptt' ? 'block' : 'none';
+        pttHint.innerHTML = `Κράτα πατημένο το <strong>${formatKeyLabel(pttKey)}</strong> για να μιλήσεις`;
+    }
     if (micToggleBtn) micToggleBtn.style.display = mode === 'open' ? 'block' : 'none';
 
     if (localStream && !isDeafened) {
@@ -698,7 +706,7 @@ function updateMicStatusDisplay(enabled) {
     }
 
     if (micMode === 'ptt') {
-        micStatusEl.textContent = enabled ? '🎤 Μιλάς...' : '⌨️ Κράτα το V για να μιλήσεις';
+        micStatusEl.textContent = enabled ? '🎤 Μιλάς...' : `⌨️ Κράτα το ${formatKeyLabel(pttKey)} για να μιλήσεις`;
         return;
     }
 
@@ -706,7 +714,7 @@ function updateMicStatusDisplay(enabled) {
 }
 
 // ============================================
-// ✅ ΝΕΟ: Deafen Toggle
+// Deafen Toggle
 // ============================================
 function toggleDeafen() {
     isDeafened = !isDeafened;
@@ -725,7 +733,6 @@ function toggleDeafen() {
             if (micMode === 'open') {
                 localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
             }
-            // σε PTT mode, παραμένει muted μέχρι να πατηθεί το V
         }
 
         deafenToggleBtn.textContent = '🙉 Κλείσιμο Ήχου (Deafen)';
@@ -735,21 +742,97 @@ function toggleDeafen() {
 }
 
 // ============================================
-// ✅ ΝΕΟ: Keyboard Shortcuts (M = mute, V = PTT)
+// Customizable Keyboard Shortcuts
 // ============================================
+function formatKeyLabel(key) {
+    if (key === ' ') return 'SPACE';
+    return key.toUpperCase();
+}
+
+function updateKeyButtonLabels() {
+    if (muteKeyBtn && listeningForKey !== 'mute') muteKeyBtn.textContent = `Mute: ${formatKeyLabel(muteKey)}`;
+    if (pttKeyBtn && listeningForKey !== 'ptt') pttKeyBtn.textContent = `PTT: ${formatKeyLabel(pttKey)}`;
+}
+
+function startListeningForKey(type) {
+    listeningForKey = type;
+
+    if (type === 'mute' && muteKeyBtn) {
+        muteKeyBtn.textContent = 'Πάτα ένα πλήκτρο...';
+        muteKeyBtn.classList.add('listening');
+    }
+    if (type === 'ptt' && pttKeyBtn) {
+        pttKeyBtn.textContent = 'Πάτα ένα πλήκτρο...';
+        pttKeyBtn.classList.add('listening');
+    }
+}
+
+function cancelListening() {
+    listeningForKey = null;
+    if (muteKeyBtn) muteKeyBtn.classList.remove('listening');
+    if (pttKeyBtn) pttKeyBtn.classList.remove('listening');
+    updateKeyButtonLabels();
+}
+
+function showShortcutError(message) {
+    let el = document.getElementById('shortcutError');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'shortcutError';
+        el.style.cssText = 'color:#ff4d4d;font-size:0.78rem;margin-top:0.4rem;';
+        const container = document.querySelector('.shortcuts-section');
+        if (container) container.appendChild(el);
+    }
+    el.textContent = message;
+    setTimeout(() => { if (el) el.textContent = ''; }, 2000);
+}
+
 document.addEventListener('keydown', (e) => {
+    // --- Λειτουργία "καταγραφής" νέου shortcut ---
+    if (listeningForKey) {
+        e.preventDefault();
+
+        const newKey = e.key.toLowerCase();
+
+        if (newKey === 'escape') {
+            cancelListening();
+            return;
+        }
+
+        const otherKey = listeningForKey === 'mute' ? pttKey : muteKey;
+        if (newKey === otherKey) {
+            showShortcutError('Αυτό το πλήκτρο χρησιμοποιείται ήδη!');
+            return;
+        }
+
+        if (listeningForKey === 'mute') {
+            muteKey = newKey;
+            localStorage.setItem('vc_muteKey', newKey);
+        } else if (listeningForKey === 'ptt') {
+            pttKey = newKey;
+            localStorage.setItem('vc_pttKey', newKey);
+            if (pttHint) {
+                pttHint.innerHTML = `Κράτα πατημένο το <strong>${formatKeyLabel(pttKey)}</strong> για να μιλήσεις`;
+            }
+        }
+
+        cancelListening();
+        return;
+    }
+
+    // --- Κανονική λειτουργία shortcuts ---
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (connectedScreen.style.display !== 'block') return;
 
     const key = e.key.toLowerCase();
 
-    if (micMode === 'ptt' && key === 'v' && !e.repeat) {
+    if (micMode === 'ptt' && key === pttKey && !e.repeat) {
         pttKeyDown = true;
         setMicTrackEnabled(true);
         return;
     }
 
-    if (micMode === 'open' && key === 'm' && !e.repeat) {
+    if (micMode === 'open' && key === muteKey && !e.repeat) {
         toggleMic();
     }
 });
@@ -759,11 +842,20 @@ document.addEventListener('keyup', (e) => {
 
     const key = e.key.toLowerCase();
 
-    if (micMode === 'ptt' && key === 'v') {
+    if (micMode === 'ptt' && key === pttKey) {
         pttKeyDown = false;
         setMicTrackEnabled(false);
     }
 });
+
+if (muteKeyBtn) {
+    muteKeyBtn.addEventListener('click', () => startListeningForKey('mute'));
+}
+if (pttKeyBtn) {
+    pttKeyBtn.addEventListener('click', () => startListeningForKey('ptt'));
+}
+
+updateKeyButtonLabels();
 
 // ============================================
 // INIT
