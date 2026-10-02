@@ -276,6 +276,9 @@ function calculateRelativeAngle(listener, speaker) {
 app.get('/', (req, res) => {
     res.send('VoiceChat Backend is running! 🎤');
 });
+app.get('/ping', (req, res) => {
+    res.status(200).send('pong');
+});
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
