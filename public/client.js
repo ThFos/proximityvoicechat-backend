@@ -1,5 +1,5 @@
 // ============================================
-// CONFIGURATION (dynamic - ενημερώνεται από τον server)
+// CONFIGURATION
 // ============================================
 const BACKEND_URL = 'wss://voice.pgglegacy.gr/voice';
 
@@ -11,25 +11,15 @@ const ICE_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        },
-        {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-        }
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
     ]
 };
 
 const SPEAKING_THRESHOLD = 15;
+const OCCLUDED_FREQ = 700;   // Hz — συχνότητα όταν υπάρχει τοίχος (πνιγμένος ήχος)
+const CLEAR_FREQ = 20000;    // Hz — συχνότητα όταν ΔΕΝ υπάρχει τοίχος (καμία επίδραση)
 
 // ============================================
 // STATE
@@ -43,15 +33,20 @@ let audioCtx = null;
 let masterGainNode = null;
 let isDeafened = false;
 
-let micMode = localStorage.getItem('vc_micMode') || 'open'; // 'open' | 'ptt'
+let micMode = localStorage.getItem('vc_micMode') || 'open';
 let pttKeyDown = false;
 
 let muteKey = localStorage.getItem('vc_muteKey') || 'm';
 let pttKey = localStorage.getItem('vc_pttKey') || 'v';
-let listeningForKey = null; // null | 'mute' | 'ptt'
+let listeningForKey = null;
 
 let masterVolume = parseFloat(localStorage.getItem('vc_masterVolume'));
 if (isNaN(masterVolume)) masterVolume = 1.0;
+
+// ✅ ΝΕΟ: Local speaking detection (για nametag indicator)
+let localAnalyser = null;
+let localDataArray = null;
+let localSpeaking = false;
 
 const peers = new Map();
 
@@ -76,38 +71,27 @@ const micStatusEl = document.getElementById('micStatus');
 const muteKeyBtn = document.getElementById('muteKeyBtn');
 const pttKeyBtn = document.getElementById('pttKeyBtn');
 
-codeInput.addEventListener('input', (e) => {
-    e.target.value = e.target.value.toUpperCase();
-});
-
-codeInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') submitLinkCode();
-});
+codeInput.addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase(); });
+codeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitLinkCode(); });
 
 // ============================================
-// Master Volume Slider Wiring
+// Master Volume Slider
 // ============================================
 if (masterVolumeSlider) {
     masterVolumeSlider.value = Math.round(masterVolume * 100);
-    if (volumeValueDisplay) {
-        volumeValueDisplay.textContent = `${Math.round(masterVolume * 100)}%`;
-    }
+    if (volumeValueDisplay) volumeValueDisplay.textContent = `${Math.round(masterVolume * 100)}%`;
 
     masterVolumeSlider.addEventListener('input', (e) => {
         const val = e.target.value / 100;
         setMasterVolume(val);
-        if (volumeValueDisplay) {
-            volumeValueDisplay.textContent = `${e.target.value}%`;
-        }
+        if (volumeValueDisplay) volumeValueDisplay.textContent = `${e.target.value}%`;
     });
 }
 
 function setMasterVolume(value) {
     masterVolume = value;
     localStorage.setItem('vc_masterVolume', value);
-    if (masterGainNode && !isDeafened) {
-        masterGainNode.gain.value = value;
-    }
+    if (masterGainNode && !isDeafened) masterGainNode.gain.value = value;
 }
 
 // ============================================
@@ -120,9 +104,7 @@ function getAudioContext() {
         masterGainNode.gain.value = masterVolume;
         masterGainNode.connect(audioCtx.destination);
     }
-    if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
-    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
     return audioCtx;
 }
 
@@ -131,39 +113,23 @@ function getAudioContext() {
 // ============================================
 function connectWebSocket() {
     ws = new WebSocket(BACKEND_URL);
-
-    ws.onopen = () => {
-        console.log('✓ Connected to backend');
-    };
-
-    ws.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        handleServerMessage(message);
-    };
-
+    ws.onopen = () => console.log('✓ Connected to backend');
+    ws.onmessage = (event) => handleServerMessage(JSON.parse(event.data));
     ws.onclose = () => {
         console.log('✗ Disconnected from backend');
         showError('Η σύνδεση με τον server χάθηκε. Κάνε refresh τη σελίδα.');
     };
-
-    ws.onerror = (err) => {
-        console.error('WebSocket error:', err);
-    };
+    ws.onerror = (err) => console.error('WebSocket error:', err);
 }
 
-// ============================================
-// Link Code Submission
-// ============================================
 function submitLinkCode() {
     const code = codeInput.value.trim();
-
     if (code.length !== 6) {
         showError('Ο κωδικός πρέπει να έχει 6 χαρακτήρες');
         return;
     }
 
     getAudioContext();
-
     linkButton.disabled = true;
     linkButton.textContent = 'Σύνδεση...';
     errorMsg.textContent = '';
@@ -177,10 +143,7 @@ function submitLinkCode() {
 }
 
 function sendLinkCode(code) {
-    ws.send(JSON.stringify({
-        type: 'link_code',
-        code: code
-    }));
+    ws.send(JSON.stringify({ type: 'link_code', code: code }));
 }
 
 function showError(message) {
@@ -189,71 +152,37 @@ function showError(message) {
     linkButton.textContent = 'Σύνδεση';
 }
 
-// ============================================
-// Server Message Handler
-// ============================================
 async function handleServerMessage(message) {
     switch (message.type) {
-        case 'link_success':
-            onLinkSuccess(message);
-            break;
-
-        case 'link_error':
-            showError(message.message);
-            break;
-
+        case 'link_success': onLinkSuccess(message); break;
+        case 'link_error': showError(message.message); break;
         case 'proximity_update':
             syncConfig(message);
             handleProximityUpdate(message.nearbyPlayers);
             break;
-
-        case 'config_update':
-            syncConfig(message);
-            break;
-
-        case 'webrtc_offer':
-            await handleOffer(message);
-            break;
-
-        case 'webrtc_answer':
-            await handleAnswer(message);
-            break;
-
-        case 'webrtc_ice_candidate':
-            await handleIceCandidate(message);
-            break;
+        case 'config_update': syncConfig(message); break;
+        case 'webrtc_offer': await handleOffer(message); break;
+        case 'webrtc_answer': await handleAnswer(message); break;
+        case 'webrtc_ice_candidate': await handleIceCandidate(message); break;
     }
 }
 
 function syncConfig(message) {
-    if (typeof message.proximityRange === 'number') {
-        MAX_DISTANCE = message.proximityRange;
-    }
-    if (typeof message.volumeCurve === 'string') {
-        VOLUME_CURVE = message.volumeCurve;
-    }
-    if (typeof message.enable3dAudio === 'boolean') {
-        ENABLE_3D_AUDIO = message.enable3dAudio;
-    }
+    if (typeof message.proximityRange === 'number') MAX_DISTANCE = message.proximityRange;
+    if (typeof message.volumeCurve === 'string') VOLUME_CURVE = message.volumeCurve;
+    if (typeof message.enable3dAudio === 'boolean') ENABLE_3D_AUDIO = message.enable3dAudio;
 }
 
-// ============================================
-// Link Success -> Request Microphone
-// ============================================
 async function onLinkSuccess(message) {
     myUuid = message.uuid;
     myName = message.name;
     syncConfig(message);
 
-    console.log(`✓ Linked as ${myName} (${myUuid}) | range=${MAX_DISTANCE} curve=${VOLUME_CURVE} 3d=${ENABLE_3D_AUDIO}`);
+    console.log(`✓ Linked as ${myName} (${myUuid})`);
 
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-            },
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
             video: false
         });
 
@@ -263,10 +192,58 @@ async function onLinkSuccess(message) {
 
         setMicMode(micMode);
         updateKeyButtonLabels();
+        setupLocalAnalyser(); // ✅ ΝΕΟ
 
     } catch (err) {
         console.error('Microphone access denied:', err.name, err.message);
         showError('Χρειάζεται πρόσβαση στο μικρόφωνο! Error: ' + err.name);
+    }
+}
+
+// ============================================
+// ✅ ΝΕΟ: Local Speaking Detection (για nametag indicator)
+// ============================================
+function setupLocalAnalyser() {
+    const ctx = getAudioContext();
+    const source = ctx.createMediaStreamSource(localStream);
+    localAnalyser = ctx.createAnalyser();
+    localAnalyser.fftSize = 512;
+    localDataArray = new Uint8Array(localAnalyser.frequencyBinCount);
+    source.connect(localAnalyser);
+    // ΔΕΝ συνδέουμε στο destination — δεν θέλουμε να ακούμε τον εαυτό μας
+}
+
+function isMicActuallyActive() {
+    if (isDeafened) return false;
+    if (micMode === 'ptt') return pttKeyDown;
+    return micEnabled;
+}
+
+function checkLocalSpeaking() {
+    if (!localAnalyser || !isMicActuallyActive()) {
+        if (localSpeaking) {
+            localSpeaking = false;
+            sendSpeakingStatus(false);
+        }
+        return;
+    }
+
+    localAnalyser.getByteFrequencyData(localDataArray);
+    let sum = 0;
+    for (let i = 0; i < localDataArray.length; i++) sum += localDataArray[i];
+    const avg = sum / localDataArray.length;
+    const speaking = avg > SPEAKING_THRESHOLD;
+
+    if (speaking !== localSpeaking) {
+        localSpeaking = speaking;
+        sendSpeakingStatus(speaking);
+    }
+}
+setInterval(checkLocalSpeaking, 150);
+
+function sendSpeakingStatus(speaking) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'speaking_status', speaking }));
     }
 }
 
@@ -277,16 +254,12 @@ function handleProximityUpdate(nearbyPlayers) {
     const nearbyUuids = new Set(nearbyPlayers.map(p => p.uuid));
 
     for (const [uuid] of peers.entries()) {
-        if (!nearbyUuids.has(uuid)) {
-            closePeerConnection(uuid);
-        }
+        if (!nearbyUuids.has(uuid)) closePeerConnection(uuid);
     }
 
     nearbyPlayers.forEach(player => {
-        if (!peers.has(player.uuid)) {
-            initiateConnection(player.uuid, player.name);
-        }
-        updatePeerAudio(player.uuid, player.distance, player.angle);
+        if (!peers.has(player.uuid)) initiateConnection(player.uuid, player.name);
+        updatePeerAudio(player.uuid, player.distance, player.angle, player.occluded);
     });
 
     renderNearbyPlayersList(nearbyPlayers);
@@ -298,18 +271,13 @@ function handleProximityUpdate(nearbyPlayers) {
 function initiateConnection(targetUuid, targetName) {
     const pc = createPeerConnection(targetUuid, targetName);
     const shouldInitiate = myUuid < targetUuid;
-
-    if (shouldInitiate) {
-        createAndSendOffer(targetUuid, pc);
-    }
+    if (shouldInitiate) createAndSendOffer(targetUuid, pc);
 }
 
 function createPeerConnection(targetUuid, targetName) {
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    localStream.getTracks().forEach(track => {
-        pc.addTrack(track, localStream);
-    });
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
 
     pc.ontrack = (event) => {
         const remoteStream = event.streams[0];
@@ -333,6 +301,7 @@ function createPeerConnection(targetUuid, targetName) {
         const source = ctx.createMediaStreamSource(remoteStream);
         const compressor = ctx.createDynamicsCompressor();
         const analyser = ctx.createAnalyser();
+        const filterNode = ctx.createBiquadFilter(); // ✅ ΝΕΟ: wall occlusion filter
         const gainNode = ctx.createGain();
         const pannerNode = ctx.createStereoPanner();
 
@@ -344,9 +313,14 @@ function createPeerConnection(targetUuid, targetName) {
 
         analyser.fftSize = 512;
 
+        filterNode.type = 'lowpass';
+        filterNode.frequency.value = CLEAR_FREQ; // default: καμία επίδραση
+
+        // Audio graph: source -> compressor -> [analyser tap] -> filter -> gain -> panner -> master
         source.connect(compressor);
         compressor.connect(analyser);
-        compressor.connect(gainNode);
+        compressor.connect(filterNode);
+        filterNode.connect(gainNode);
         gainNode.connect(pannerNode);
         pannerNode.connect(masterGainNode);
 
@@ -357,6 +331,7 @@ function createPeerConnection(targetUuid, targetName) {
             peerData.compressorNode = compressor;
             peerData.analyserNode = analyser;
             peerData.dataArray = new Uint8Array(analyser.frequencyBinCount);
+            peerData.filterNode = filterNode;
             peerData.gainNode = gainNode;
             peerData.pannerNode = pannerNode;
         }
@@ -384,11 +359,13 @@ function createPeerConnection(targetUuid, targetName) {
         compressorNode: null,
         analyserNode: null,
         dataArray: null,
+        filterNode: null,
         gainNode: null,
         pannerNode: null,
         name: targetName,
         distance: 0,
         angle: 0,
+        occluded: false,
         speaking: false,
         quality: 'good'
     });
@@ -399,7 +376,6 @@ function createPeerConnection(targetUuid, targetName) {
 async function createAndSendOffer(targetUuid, pc) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
     ws.send(JSON.stringify({
         type: 'webrtc_offer',
         targetUuid: targetUuid,
@@ -411,7 +387,6 @@ async function createAndSendOffer(targetUuid, pc) {
 
 async function handleOffer(message) {
     const { fromUuid, fromName, offer } = message;
-
     let peerData = peers.get(fromUuid);
     let pc;
 
@@ -422,7 +397,6 @@ async function handleOffer(message) {
     }
 
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
-
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -437,23 +411,17 @@ async function handleOffer(message) {
 async function handleAnswer(message) {
     const { fromUuid, answer } = message;
     const peerData = peers.get(fromUuid);
-
     if (peerData) {
-        await peerData.peerConnection.setRemoteDescription(
-            new RTCSessionDescription(answer)
-        );
+        await peerData.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
     }
 }
 
 async function handleIceCandidate(message) {
     const { fromUuid, candidate } = message;
     const peerData = peers.get(fromUuid);
-
     if (peerData) {
         try {
-            await peerData.peerConnection.addIceCandidate(
-                new RTCIceCandidate(candidate)
-            );
+            await peerData.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (err) {
             console.error('Error adding ICE candidate:', err);
         }
@@ -464,24 +432,19 @@ function closePeerConnection(uuid) {
     const peerData = peers.get(uuid);
     if (peerData) {
         peerData.peerConnection.close();
-
         if (peerData.sourceNode) peerData.sourceNode.disconnect();
         if (peerData.compressorNode) peerData.compressorNode.disconnect();
         if (peerData.analyserNode) peerData.analyserNode.disconnect();
+        if (peerData.filterNode) peerData.filterNode.disconnect();
         if (peerData.gainNode) peerData.gainNode.disconnect();
         if (peerData.pannerNode) peerData.pannerNode.disconnect();
         if (peerData.audioElement) peerData.audioElement.remove();
-
         peers.delete(uuid);
     }
 }
 
-// ============================================
-// Audio Enable Fallback Button
-// ============================================
 function showEnableAudioButton() {
     if (document.getElementById('enableAudioBtn')) return;
-
     const btn = document.createElement('button');
     btn.id = 'enableAudioBtn';
     btn.textContent = '🔊 Πάτα εδώ για να ενεργοποιηθεί ο ήχος';
@@ -494,9 +457,7 @@ function showEnableAudioButton() {
     btn.onclick = () => {
         getAudioContext();
         peers.forEach(peerData => {
-            if (peerData.audioElement) {
-                peerData.audioElement.play().catch(e => console.error('Still blocked:', e));
-            }
+            if (peerData.audioElement) peerData.audioElement.play().catch(e => console.error('Still blocked:', e));
         });
         btn.remove();
     };
@@ -504,24 +465,21 @@ function showEnableAudioButton() {
 }
 
 // ============================================
-// Dynamic Volume & Panning
+// Dynamic Volume, Panning & Occlusion
 // ============================================
 function calculateVolume(distance) {
     const ratio = Math.max(0, 1 - (distance / MAX_DISTANCE));
-
-    if (VOLUME_CURVE === 'exponential') {
-        return Math.pow(ratio, 2);
-    }
-
+    if (VOLUME_CURVE === 'exponential') return Math.pow(ratio, 2);
     return ratio;
 }
 
-function updatePeerAudio(uuid, distance, angle) {
+function updatePeerAudio(uuid, distance, angle, occluded) {
     const peerData = peers.get(uuid);
     if (!peerData) return;
 
     peerData.distance = distance;
     peerData.angle = angle;
+    peerData.occluded = occluded;
 
     if (peerData.gainNode) {
         peerData.gainNode.gain.value = calculateVolume(distance);
@@ -529,33 +487,34 @@ function updatePeerAudio(uuid, distance, angle) {
 
     if (peerData.pannerNode) {
         if (ENABLE_3D_AUDIO && typeof angle === 'number') {
-            const panValue = Math.sin(angle * Math.PI / 180);
-            peerData.pannerNode.pan.value = panValue;
+            peerData.pannerNode.pan.value = Math.sin(angle * Math.PI / 180);
         } else {
             peerData.pannerNode.pan.value = 0;
         }
     }
+
+    // ✅ ΝΕΟ: Εφαρμογή/αφαίρεση muffled εφέ
+    if (peerData.filterNode) {
+        const targetFreq = occluded ? OCCLUDED_FREQ : CLEAR_FREQ;
+        peerData.filterNode.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
+    }
 }
 
 // ============================================
-// Speaking Detection Loop
+// Speaking Detection Loop (για peers)
 // ============================================
 function updateSpeakingIndicators() {
     peers.forEach((peerData, uuid) => {
         if (!peerData.analyserNode || !peerData.dataArray) return;
 
         peerData.analyserNode.getByteFrequencyData(peerData.dataArray);
-
         let sum = 0;
-        for (let i = 0; i < peerData.dataArray.length; i++) {
-            sum += peerData.dataArray[i];
-        }
+        for (let i = 0; i < peerData.dataArray.length; i++) sum += peerData.dataArray[i];
         const avg = sum / peerData.dataArray.length;
         const speaking = avg > SPEAKING_THRESHOLD;
 
         if (speaking !== peerData.speaking) {
             peerData.speaking = speaking;
-
             const item = document.querySelector(`.player-item[data-uuid="${uuid}"]`);
             if (item) {
                 item.classList.toggle('speaking', speaking);
@@ -597,9 +556,7 @@ async function updateConnectionQuality() {
             peerData.quality = quality;
 
             const icon = document.querySelector(`.player-item[data-uuid="${uuid}"] .quality-icon`);
-            if (icon) {
-                icon.className = 'quality-icon quality-' + quality;
-            }
+            if (icon) icon.className = 'quality-icon quality-' + quality;
         } catch (err) {
             // αγνόησε σιωπηλά
         }
@@ -619,6 +576,7 @@ function renderNearbyPlayersList(nearbyPlayers) {
     nearbyPlayersEl.innerHTML = nearbyPlayers.map(player => {
         const volumePercent = Math.round(calculateVolume(player.distance) * 100);
         const angle = typeof player.angle === 'number' ? player.angle : 0;
+        const wallIcon = player.occluded ? '<span class="wall-icon" title="Τοίχος ανάμεσα">🧱</span>' : '';
 
         return `
             <div class="player-item" data-uuid="${player.uuid}">
@@ -627,6 +585,7 @@ function renderNearbyPlayersList(nearbyPlayers) {
                         <span class="speaking-dot"></span>
                         <span class="player-name">${player.name}</span>
                         <span class="direction-arrow" style="transform: rotate(${angle}deg)">↑</span>
+                        ${wallIcon}
                         <span class="quality-icon quality-good">📶</span>
                     </div>
                     <div class="player-distance">${player.distance.toFixed(1)}m</div>
@@ -640,7 +599,7 @@ function renderNearbyPlayersList(nearbyPlayers) {
 }
 
 // ============================================
-// Mic Toggle (Open Mic mode)
+// Mic Toggle
 // ============================================
 function toggleMic() {
     if (micMode === 'ptt') return;
@@ -649,9 +608,7 @@ function toggleMic() {
     micEnabled = !micEnabled;
 
     if (localStream) {
-        localStream.getAudioTracks().forEach(track => {
-            track.enabled = micEnabled;
-        });
+        localStream.getAudioTracks().forEach(track => track.enabled = micEnabled);
     }
 
     updateMicStatusDisplay(micEnabled);
@@ -665,9 +622,6 @@ function toggleMic() {
     }
 }
 
-// ============================================
-// Mic Mode (Open / Push-to-Talk)
-// ============================================
 function setMicMode(mode) {
     micMode = mode;
     localStorage.setItem('vc_micMode', mode);
@@ -713,28 +667,20 @@ function updateMicStatusDisplay(enabled) {
     micStatusEl.textContent = enabled ? '🎤 Μικρόφωνο: Ενεργό' : '🔇 Μικρόφωνο: Σίγαση';
 }
 
-// ============================================
-// Deafen Toggle
-// ============================================
 function toggleDeafen() {
     isDeafened = !isDeafened;
 
     if (isDeafened) {
         if (masterGainNode) masterGainNode.gain.value = 0;
         if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = false);
-
         deafenToggleBtn.textContent = '🔇 Ενεργοποίηση Ήχου';
         deafenToggleBtn.classList.add('active');
         updateMicStatusDisplay(false);
     } else {
         if (masterGainNode) masterGainNode.gain.value = masterVolume;
-
-        if (localStream) {
-            if (micMode === 'open') {
-                localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
-            }
+        if (localStream && micMode === 'open') {
+            localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
         }
-
         deafenToggleBtn.textContent = '🙉 Κλείσιμο Ήχου (Deafen)';
         deafenToggleBtn.classList.remove('active');
         updateMicStatusDisplay(micMode === 'open' ? micEnabled : false);
@@ -756,7 +702,6 @@ function updateKeyButtonLabels() {
 
 function startListeningForKey(type) {
     listeningForKey = type;
-
     if (type === 'mute' && muteKeyBtn) {
         muteKeyBtn.textContent = 'Πάτα ένα πλήκτρο...';
         muteKeyBtn.classList.add('listening');
@@ -788,10 +733,8 @@ function showShortcutError(message) {
 }
 
 document.addEventListener('keydown', (e) => {
-    // --- Λειτουργία "καταγραφής" νέου shortcut ---
     if (listeningForKey) {
         e.preventDefault();
-
         const newKey = e.key.toLowerCase();
 
         if (newKey === 'escape') {
@@ -811,16 +754,13 @@ document.addEventListener('keydown', (e) => {
         } else if (listeningForKey === 'ptt') {
             pttKey = newKey;
             localStorage.setItem('vc_pttKey', newKey);
-            if (pttHint) {
-                pttHint.innerHTML = `Κράτα πατημένο το <strong>${formatKeyLabel(pttKey)}</strong> για να μιλήσεις`;
-            }
+            if (pttHint) pttHint.innerHTML = `Κράτα πατημένο το <strong>${formatKeyLabel(pttKey)}</strong> για να μιλήσεις`;
         }
 
         cancelListening();
         return;
     }
 
-    // --- Κανονική λειτουργία shortcuts ---
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (connectedScreen.style.display !== 'block') return;
 
@@ -839,7 +779,6 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('keyup', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
     const key = e.key.toLowerCase();
 
     if (micMode === 'ptt' && key === pttKey) {
@@ -848,12 +787,8 @@ document.addEventListener('keyup', (e) => {
     }
 });
 
-if (muteKeyBtn) {
-    muteKeyBtn.addEventListener('click', () => startListeningForKey('mute'));
-}
-if (pttKeyBtn) {
-    pttKeyBtn.addEventListener('click', () => startListeningForKey('ptt'));
-}
+if (muteKeyBtn) muteKeyBtn.addEventListener('click', () => startListeningForKey('mute'));
+if (pttKeyBtn) pttKeyBtn.addEventListener('click', () => startListeningForKey('ptt'));
 
 updateKeyButtonLabels();
 

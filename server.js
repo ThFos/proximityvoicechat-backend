@@ -15,10 +15,11 @@ let playerLocations = new Map();
 let linkCodes = new Map();
 let webClients = new Map();
 let uuidToWs = new Map();
+let occludedPairsSet = new Set(); // ✅ ΝΕΟ
 
 let PROXIMITY_RANGE = 20;
 let VOLUME_CURVE = 'linear';
-let ENABLE_3D_AUDIO = true; // ✅ ΝΕΟ
+let ENABLE_3D_AUDIO = true;
 
 server.on('upgrade', (request, socket, head) => {
     const pathname = request.url;
@@ -47,7 +48,7 @@ minecraftWSS.on('connection', (ws) => {
 
             switch (message.type) {
                 case 'location_update':
-                    handleLocationUpdate(message.players);
+                    handleLocationUpdate(message.players, message.occludedPairs);
                     break;
 
                 case 'generate_link':
@@ -82,7 +83,7 @@ function handleConfigUpdate(message) {
         VOLUME_CURVE = message.volumeCurve;
     }
     if (typeof message.enable3dAudio === 'boolean') {
-        ENABLE_3D_AUDIO = message.enable3dAudio; // ✅ ΝΕΟ
+        ENABLE_3D_AUDIO = message.enable3dAudio;
     }
     console.log(`⚙️  Config updated: range=${PROXIMITY_RANGE}, curve=${VOLUME_CURVE}, 3d=${ENABLE_3D_AUDIO}`);
 
@@ -92,13 +93,13 @@ function handleConfigUpdate(message) {
                 type: 'config_update',
                 proximityRange: PROXIMITY_RANGE,
                 volumeCurve: VOLUME_CURVE,
-                enable3dAudio: ENABLE_3D_AUDIO // ✅ ΝΕΟ
+                enable3dAudio: ENABLE_3D_AUDIO
             }));
         }
     }
 }
 
-function handleLocationUpdate(players) {
+function handleLocationUpdate(players, occludedPairs) {
     playerLocations.clear();
 
     players.forEach(player => {
@@ -107,12 +108,26 @@ function handleLocationUpdate(players) {
             x: player.x,
             y: player.y,
             z: player.z,
-            yaw: player.yaw, // ✅ ΝΕΟ
+            yaw: player.yaw,
             world: player.world
         });
     });
 
+    // ✅ ΝΕΟ: Αποθήκευση occluded pairs σε Set για γρήγορο lookup
+    occludedPairsSet = new Set();
+    if (Array.isArray(occludedPairs)) {
+        occludedPairs.forEach(pair => {
+            const key = [pair[0], pair[1]].sort().join('|');
+            occludedPairsSet.add(key);
+        });
+    }
+
     calculateProximityAndNotify();
+}
+
+function isOccluded(uuid1, uuid2) {
+    const key = [uuid1, uuid2].sort().join('|');
+    return occludedPairsSet.has(key);
 }
 
 function handleGenerateLink(message) {
@@ -146,6 +161,10 @@ webClientWSS.on('connection', (ws) => {
                 case 'webrtc_answer':
                 case 'webrtc_ice_candidate':
                     relayWebRTCMessage(message);
+                    break;
+
+                case 'speaking_status':
+                    handleSpeakingStatus(ws, message.speaking);
                     break;
             }
         } catch (err) {
@@ -188,7 +207,7 @@ function handleLinkCode(ws, code) {
         name: linkData.name,
         proximityRange: PROXIMITY_RANGE,
         volumeCurve: VOLUME_CURVE,
-        enable3dAudio: ENABLE_3D_AUDIO // ✅ ΝΕΟ
+        enable3dAudio: ENABLE_3D_AUDIO
     }));
 
     if (minecraftConnection) {
@@ -208,31 +227,47 @@ function relayWebRTCMessage(message) {
     }
 }
 
+// ✅ ΝΕΟ: Προωθεί το speaking status του web client στο Minecraft plugin
+function handleSpeakingStatus(ws, speaking) {
+    const clientData = webClients.get(ws);
+    if (!clientData) return;
+
+    if (minecraftConnection && minecraftConnection.readyState === minecraftConnection.OPEN) {
+        minecraftConnection.send(JSON.stringify({
+            type: 'speaking_status',
+            uuid: clientData.uuid,
+            speaking: speaking
+        }));
+    }
+}
+
 // ============ PROXIMITY CALCULATION ============
 function calculateProximityAndNotify() {
     const players = Array.from(playerLocations.entries());
 
     for (let i = 0; i < players.length; i++) {
-        const [uuid1, loc1] = players[i]; // loc1 = ο "ακροατής"
+        const [uuid1, loc1] = players[i];
         const nearbyPlayers = [];
 
         for (let j = 0; j < players.length; j++) {
             if (i === j) continue;
 
-            const [uuid2, loc2] = players[j]; // loc2 = αυτός που μιλάει
+            const [uuid2, loc2] = players[j];
 
             if (loc1.world !== loc2.world) continue;
 
             const distance = calculateDistance(loc1, loc2);
 
             if (distance <= PROXIMITY_RANGE) {
-                const angle = calculateRelativeAngle(loc1, loc2); // ✅ ΝΕΟ
+                const angle = calculateRelativeAngle(loc1, loc2);
+                const occluded = isOccluded(uuid1, uuid2); // ✅ ΝΕΟ
 
                 nearbyPlayers.push({
                     uuid: uuid2,
                     name: loc2.name,
                     distance: distance,
-                    angle: angle // ✅ ΝΕΟ: -180 (πίσω-αριστερά) έως 180 (πίσω-δεξιά), 0 = μπροστά
+                    angle: angle,
+                    occluded: occluded // ✅ ΝΕΟ
                 });
             }
         }
@@ -244,7 +279,7 @@ function calculateProximityAndNotify() {
                 nearbyPlayers: nearbyPlayers,
                 proximityRange: PROXIMITY_RANGE,
                 volumeCurve: VOLUME_CURVE,
-                enable3dAudio: ENABLE_3D_AUDIO // ✅ ΝΕΟ
+                enable3dAudio: ENABLE_3D_AUDIO
             }));
         }
     }
@@ -257,14 +292,10 @@ function calculateDistance(loc1, loc2) {
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// ✅ ΝΕΟ: Υπολογίζει τη γωνία του "speaker" σχετικά με το πού κοιτάει ο "listener"
-// Επιστρέφει: 0 = ακριβώς μπροστά, 90 = δεξιά, -90 = αριστερά, ±180 = πίσω
 function calculateRelativeAngle(listener, speaker) {
     const dx = speaker.x - listener.x;
     const dz = speaker.z - listener.z;
 
-    // Γωνία προς τον speaker, σε Minecraft yaw convention
-    // (yaw: 0=South/+Z, 90=West/-X, 180=North/-Z, 270=East/+X)
     const angleToSpeaker = (Math.atan2(-dx, dz) * 180 / Math.PI + 360) % 360;
 
     let relativeAngle = angleToSpeaker - listener.yaw;
@@ -276,6 +307,7 @@ function calculateRelativeAngle(listener, speaker) {
 app.get('/', (req, res) => {
     res.send('VoiceChat Backend is running! 🎤');
 });
+
 app.get('/ping', (req, res) => {
     res.status(200).send('pong');
 });
