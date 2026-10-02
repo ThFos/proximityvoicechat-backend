@@ -1,8 +1,10 @@
 // ============================================
-// CONFIGURATION
+// CONFIGURATION (dynamic - ενημερώνεται από τον server)
 // ============================================
 const BACKEND_URL = 'wss://voice.pgglegacy.gr/voice';
-const MAX_DISTANCE = 20; // Πρέπει να ταιριάζει με το PROXIMITY_RANGE του backend
+
+let MAX_DISTANCE = 20;       // default, θα ενημερωθεί από το backend
+let VOLUME_CURVE = 'linear'; // default, θα ενημερωθεί από το backend
 
 const ICE_SERVERS = {
     iceServers: [
@@ -117,7 +119,12 @@ async function handleServerMessage(message) {
             break;
 
         case 'proximity_update':
+            syncConfig(message);
             handleProximityUpdate(message.nearbyPlayers);
+            break;
+
+        case 'config_update':
+            syncConfig(message);
             break;
 
         case 'webrtc_offer':
@@ -134,14 +141,25 @@ async function handleServerMessage(message) {
     }
 }
 
+// Ενημερώνει τοπικά το MAX_DISTANCE/VOLUME_CURVE όποτε έρχονται από τον server
+function syncConfig(message) {
+    if (typeof message.proximityRange === 'number') {
+        MAX_DISTANCE = message.proximityRange;
+    }
+    if (typeof message.volumeCurve === 'string') {
+        VOLUME_CURVE = message.volumeCurve;
+    }
+}
+
 // ============================================
 // Link Success -> Request Microphone
 // ============================================
 async function onLinkSuccess(message) {
     myUuid = message.uuid;
     myName = message.name;
+    syncConfig(message);
 
-    console.log(`✓ Linked as ${myName} (${myUuid})`);
+    console.log(`✓ Linked as ${myName} (${myUuid}) | range=${MAX_DISTANCE} curve=${VOLUME_CURVE}`);
 
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
@@ -317,8 +335,20 @@ function closePeerConnection(uuid) {
 }
 
 // ============================================
-// Dynamic Volume
+// Dynamic Volume (τώρα υποστηρίζει 2 καμπύλες)
 // ============================================
+function calculateVolume(distance) {
+    const ratio = Math.max(0, 1 - (distance / MAX_DISTANCE));
+
+    if (VOLUME_CURVE === 'exponential') {
+        // Πιο απότομη μείωση - η ένταση πέφτει γρήγορα όσο αυξάνεται η απόσταση
+        return Math.pow(ratio, 2);
+    }
+
+    // linear (default) - σταθερή/ομαλή μείωση
+    return ratio;
+}
+
 function updatePeerDistance(uuid, distance) {
     const peerData = peers.get(uuid);
     if (!peerData) return;
@@ -326,8 +356,7 @@ function updatePeerDistance(uuid, distance) {
     peerData.distance = distance;
 
     if (peerData.audioElement) {
-        const volume = Math.max(0, 1 - (distance / MAX_DISTANCE));
-        peerData.audioElement.volume = volume;
+        peerData.audioElement.volume = calculateVolume(distance);
     }
 }
 
@@ -341,7 +370,7 @@ function renderNearbyPlayersList(nearbyPlayers) {
     }
 
     nearbyPlayersEl.innerHTML = nearbyPlayers.map(player => {
-        const volumePercent = Math.round(Math.max(0, 1 - (player.distance / MAX_DISTANCE)) * 100);
+        const volumePercent = Math.round(calculateVolume(player.distance) * 100);
         return `
             <div class="player-item">
                 <div class="player-info">

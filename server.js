@@ -7,20 +7,19 @@ const server = http.createServer(app);
 
 app.use(express.static('public'));
 
-// Δύο ξεχωριστά WebSocket servers
 const minecraftWSS = new WebSocketServer({ noServer: true });
 const webClientWSS = new WebSocketServer({ noServer: true });
 
-// Data structures
 let minecraftConnection = null;
-let playerLocations = new Map(); // uuid -> {x, y, z, world, name}
-let linkCodes = new Map(); // code -> {uuid, name, timestamp}
-let webClients = new Map(); // ws -> {uuid, name}
-let uuidToWs = new Map(); // uuid -> ws
+let playerLocations = new Map();
+let linkCodes = new Map();
+let webClients = new Map();
+let uuidToWs = new Map();
 
-const PROXIMITY_RANGE = 20; // blocks
+// ✅ Τώρα είναι "let" ώστε να μπορεί να αλλάξει δυναμικά μέσω του plugin
+let PROXIMITY_RANGE = 20;
+let VOLUME_CURVE = 'linear';
 
-// Handle upgrade requests (για να ξεχωρίζουμε /minecraft από /voice)
 server.on('upgrade', (request, socket, head) => {
     const pathname = request.url;
 
@@ -54,6 +53,10 @@ minecraftWSS.on('connection', (ws) => {
                 case 'generate_link':
                     handleGenerateLink(message);
                     break;
+
+                case 'config':
+                    handleConfigUpdate(message);
+                    break;
             }
         } catch (err) {
             console.error('Error parsing minecraft message:', err);
@@ -71,8 +74,28 @@ minecraftWSS.on('connection', (ws) => {
     });
 });
 
+function handleConfigUpdate(message) {
+    if (typeof message.proximityRange === 'number') {
+        PROXIMITY_RANGE = message.proximityRange;
+    }
+    if (typeof message.volumeCurve === 'string') {
+        VOLUME_CURVE = message.volumeCurve;
+    }
+    console.log(`⚙️  Config updated: range=${PROXIMITY_RANGE}, curve=${VOLUME_CURVE}`);
+
+    // Ενημέρωσε όλους τους ήδη συνδεδεμένους web clients με τις νέες ρυθμίσεις
+    for (const ws of uuidToWs.values()) {
+        if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'config_update',
+                proximityRange: PROXIMITY_RANGE,
+                volumeCurve: VOLUME_CURVE
+            }));
+        }
+    }
+}
+
 function handleLocationUpdate(players) {
-    // ✅ FIX: Καθαρίζουμε πρώτα τη λίστα ώστε να μη μένουν "ghost" παίκτες
     playerLocations.clear();
 
     players.forEach(player => {
@@ -97,7 +120,6 @@ function handleGenerateLink(message) {
 
     console.log(`📋 Link code generated: ${message.code} for ${message.name}`);
 
-    // Clean up old codes after 5 minutes
     setTimeout(() => {
         linkCodes.delete(message.code);
     }, 5 * 60 * 1000);
@@ -152,18 +174,19 @@ function handleLinkCode(ws, code) {
         return;
     }
 
-    // Link successful
     webClients.set(ws, { uuid: linkData.uuid, name: linkData.name });
     uuidToWs.set(linkData.uuid, ws);
     linkCodes.delete(code);
 
+    // ✅ Στέλνουμε τώρα και τις τρέχουσες ρυθμίσεις μαζί με το link_success
     ws.send(JSON.stringify({
         type: 'link_success',
         uuid: linkData.uuid,
-        name: linkData.name
+        name: linkData.name,
+        proximityRange: PROXIMITY_RANGE,
+        volumeCurve: VOLUME_CURVE
     }));
 
-    // Notify Minecraft plugin
     if (minecraftConnection) {
         minecraftConnection.send(JSON.stringify({
             type: 'link_confirmed',
@@ -207,12 +230,13 @@ function calculateProximityAndNotify() {
             }
         }
 
-        // Notify this player's web client about nearby players
         const ws = uuidToWs.get(uuid1);
         if (ws && ws.readyState === ws.OPEN) {
             ws.send(JSON.stringify({
                 type: 'proximity_update',
-                nearbyPlayers: nearbyPlayers
+                nearbyPlayers: nearbyPlayers,
+                proximityRange: PROXIMITY_RANGE,
+                volumeCurve: VOLUME_CURVE
             }));
         }
     }
@@ -225,7 +249,6 @@ function calculateDistance(loc1, loc2) {
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// ============ BASIC ROUTE ============
 app.get('/', (req, res) => {
     res.send('VoiceChat Backend is running! 🎤');
 });
