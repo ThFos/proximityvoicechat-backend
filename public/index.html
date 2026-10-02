@@ -34,47 +34,28 @@
             color: #fff;
         }
 
-        body {
-            display: flex;
-            flex-direction: column;
-        }
+        body { display: flex; flex-direction: column; }
 
-        /* ==========================================================================
-           CUSTOM CURSOR (ίδιο με pgglegacy.gr)
-           ========================================================================== */
+        /* ===== CUSTOM CURSOR ===== */
         @media (hover: hover) and (pointer: fine) {
-            * {
-                cursor: none !important;
-            }
+            * { cursor: none !important; }
 
             .custom-cursor {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 14px;
-                height: 14px;
+                position: fixed; top: 0; left: 0;
+                width: 14px; height: 14px;
                 border: 2px solid var(--accent1);
                 border-radius: 50%;
-                pointer-events: none;
-                z-index: 99999;
+                pointer-events: none; z-index: 99999;
                 will-change: transform;
                 transform: translate(-50%, -50%);
             }
 
             .cursor-glow {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 280px;
-                height: 280px;
-                background: radial-gradient(
-                        circle,
-                        rgba(107, 45, 216, 0.12) 0%,
-                        transparent 70%
-                );
+                position: fixed; top: 0; left: 0;
+                width: 280px; height: 280px;
+                background: radial-gradient(circle, rgba(107, 45, 216, 0.12) 0%, transparent 70%);
                 border-radius: 50%;
-                pointer-events: none;
-                z-index: 1;
+                pointer-events: none; z-index: 1;
                 transition: transform 0.04s linear;
                 will-change: transform;
                 transform: translate(-50%, -50%);
@@ -82,22 +63,14 @@
         }
 
         @media (hover: none), (pointer: coarse) {
-            .custom-cursor,
-            .cursor-glow {
-                display: none !important;
-            }
+            .custom-cursor, .cursor-glow { display: none !important; }
         }
 
-        /* ==========================================================================
-           NAVBAR (ακριβές στυλ όπως pgglegacy.gr)
-           ========================================================================== */
+        /* ===== NAVBAR ===== */
         .voice_navbar {
-            position: fixed;
-            inset: 0 0 auto 0;
-            display: flex;
-            height: 5.2rem;
-            align-items: center;
-            justify-content: space-between;
+            position: fixed; inset: 0 0 auto 0;
+            display: flex; height: 5.2rem;
+            align-items: center; justify-content: space-between;
             padding: 0 1.5rem;
             background: rgba(0, 0, 0, 0.4);
             backdrop-filter: blur(15px);
@@ -106,21 +79,16 @@
         }
 
         .voice_navbar_logo_img {
-            width: 9.5rem;
-            height: auto;
+            width: 9.5rem; height: auto;
             transition: transform var(--transition-std);
         }
 
-        .voice_navbar_logo_img:hover {
-            transform: scale(1.05);
-        }
+        .voice_navbar_logo_img:hover { transform: scale(1.05); }
 
         .voice_navbar_back {
-            font-size: 1.05rem;
-            font-weight: 700;
+            font-size: 1.05rem; font-weight: 700;
             padding: 0.5rem 1rem;
-            text-decoration: none;
-            color: #fff;
+            text-decoration: none; color: #fff;
             border: 1px solid var(--accent1);
             border-radius: var(--roundness);
             white-space: nowrap;
@@ -140,41 +108,25 @@
                 border-bottom: 1px solid var(--border-subtle);
                 padding: 0 1rem;
             }
-
-            .voice_navbar_logo_img {
-                width: auto;
-                height: 36px;
-            }
-
-            .voice_navbar_back {
-                font-size: 0.85rem;
-                padding: 0.5rem 0.8rem;
-            }
-
-            .voice_main {
-                padding-top: calc(60px + 2rem);
-            }
+            .voice_navbar_logo_img { width: auto; height: 36px; }
+            .voice_navbar_back { font-size: 0.85rem; padding: 0.5rem 0.8rem; }
+            .voice_main { padding-top: calc(60px + 2rem); }
         }
 
         /* ===== MAIN CONTENT ===== */
         .voice_main {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            flex: 1; display: flex;
+            align-items: center; justify-content: center;
             padding: calc(5.2rem + 2rem) 1rem 2rem;
         }
 
         .logo {
-            display: block;
-            width: 200px;
-            height: auto;
+            display: block; width: 200px; height: auto;
             margin: 0 auto 1.5rem;
         }
 
         .container {
-            width: 100%;
-            max-width: 420px;
+            width: 100%; max-width: 420px;
             background: var(--bg2);
             border: 1px solid var(--border-subtle);
             border-radius: var(--roundness);
@@ -183,11 +135,7 @@
             transition: border-color var(--transition-std);
         }
 
-        h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
+        h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
 
         .subtitle {
             color: var(--text-muted);
@@ -196,12 +144,7 @@
             line-height: 1.5;
         }
 
-        /* ===== LINK SCREEN ===== */
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            margin-bottom: 1.25rem;
-        }
+        .form-group { display: flex; flex-direction: column; margin-bottom: 1.25rem; }
 
         #codeInput {
             background: rgba(255, 255, 255, 0.05);
@@ -218,26 +161,18 @@
             transition: border-color var(--transition-std), box-shadow var(--transition-std);
         }
 
-        #codeInput::placeholder {
-            color: rgba(255, 255, 255, 0.25);
-            letter-spacing: 6px;
-        }
+        #codeInput::placeholder { color: rgba(255, 255, 255, 0.25); letter-spacing: 6px; }
 
         #codeInput:focus {
             border-color: var(--accent1);
             box-shadow: 0 0 0 3px rgba(107, 45, 216, 0.2);
         }
 
-        /* ===== Button style όπως το discord-btn ===== */
         button {
-            display: inline-block;
-            width: 100%;
+            display: inline-block; width: 100%;
             padding: 0.85rem 1.5rem;
-            color: #fff;
-            text-align: center;
-            font-family: inherit;
-            font-weight: 700;
-            font-size: 1rem;
+            color: #fff; text-align: center;
+            font-family: inherit; font-weight: 700; font-size: 1rem;
             text-decoration: none;
             border: 1px solid var(--accent1);
             border-radius: var(--roundness);
@@ -251,10 +186,7 @@
             background: var(--accent2);
         }
 
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         #errorMsg {
             color: #ff4d4d;
@@ -264,7 +196,6 @@
             font-weight: 600;
         }
 
-        /* ===== CONNECTED SCREEN ===== */
         #connectedScreen { display: none; }
 
         .status-box {
@@ -275,33 +206,74 @@
             margin-bottom: 1.5rem;
         }
 
-        #playerName {
-            font-size: 1.3rem;
-            font-weight: 700;
-            margin-bottom: 0.3rem;
+        #playerName { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.3rem; }
+        #micStatus { font-size: 0.9rem; color: var(--text-muted); }
+
+        /* ===== Mic Mode Toggle (ΝΕΟ) ===== */
+        .mic-mode-toggle {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
         }
 
-        #micStatus {
-            font-size: 0.9rem;
+        .mode-btn {
+            flex: 1;
+            font-size: 0.78rem;
+            padding: 0.65rem 0.5rem;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg1);
             color: var(--text-muted);
+            border-radius: var(--roundness);
+            cursor: pointer;
+            transition: all var(--transition-std);
+            font-family: inherit;
+            font-weight: 600;
+        }
+
+        .mode-btn:hover { border-color: var(--accent1); }
+
+        .mode-btn.active {
+            border-color: var(--accent1);
+            color: #fff;
+            background: var(--accent2-transp);
+        }
+
+        #pttHint {
+            font-size: 0.82rem;
+            color: var(--accent1);
+            margin-bottom: 1rem;
+            padding: 0.65rem;
+            background: rgba(107, 45, 216, 0.1);
+            border-radius: var(--roundness);
+            border: 1px solid rgba(107, 45, 216, 0.25);
+            display: none;
         }
 
         .mic-toggle {
             border-color: #ff4d4d;
-            margin-bottom: 1.25rem;
+            margin-bottom: 0.75rem;
         }
 
-        .mic-toggle:hover {
-            background: #ff4d4d;
-            border-color: #ff4d4d;
-        }
+        .mic-toggle:hover { background: #ff4d4d; border-color: #ff4d4d; }
 
         .mic-toggle.muted {
             border-color: rgba(255, 255, 255, 0.2);
         }
 
-        .mic-toggle.muted:hover {
-            background: rgba(255, 255, 255, 0.1);
+        .mic-toggle.muted:hover { background: rgba(255, 255, 255, 0.1); }
+
+        /* ===== Deafen Button (ΝΕΟ) ===== */
+        .deafen-toggle {
+            border-color: #ff9f43;
+            margin-bottom: 1.25rem;
+        }
+
+        .deafen-toggle:hover { background: #ff9f43; border-color: #ff9f43; }
+
+        .deafen-toggle.active {
+            background: rgba(255, 159, 67, 0.15);
+            border-color: #ff9f43;
+            color: #ff9f43;
         }
 
         /* ===== VOLUME SLIDER ===== */
@@ -322,10 +294,7 @@
             color: var(--text-muted);
         }
 
-        .volume-label-row span.value {
-            color: var(--accent1);
-            font-weight: 700;
-        }
+        .volume-label-row span.value { color: var(--accent1); font-weight: 700; }
 
         #masterVolumeSlider {
             -webkit-appearance: none;
@@ -342,8 +311,7 @@
 
         #masterVolumeSlider::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 16px;
-            height: 16px;
+            width: 16px; height: 16px;
             border-radius: 50%;
             background: var(--accent1);
             cursor: pointer;
@@ -351,13 +319,10 @@
             transition: transform var(--transition-std);
         }
 
-        #masterVolumeSlider::-webkit-slider-thumb:hover {
-            transform: scale(1.15);
-        }
+        #masterVolumeSlider::-webkit-slider-thumb:hover { transform: scale(1.15); }
 
         #masterVolumeSlider::-moz-range-thumb {
-            width: 16px;
-            height: 16px;
+            width: 16px; height: 16px;
             border-radius: 50%;
             background: var(--accent1);
             cursor: pointer;
@@ -391,7 +356,7 @@
             border-radius: var(--roundness);
             padding: 0.8rem 1rem;
             margin-bottom: 0.6rem;
-            transition: transform var(--transition-std), border-color var(--transition-std);
+            transition: transform var(--transition-std), border-color var(--transition-std), box-shadow var(--transition-std);
         }
 
         .player-item:hover {
@@ -399,12 +364,63 @@
             border-color: rgba(255, 255, 255, 0.15);
         }
 
-        .player-info { text-align: left; }
-
-        .player-name {
-            font-weight: 700;
-            font-size: 1rem;
+        /* ✅ ΝΕΟ: Glow όταν μιλάει */
+        .player-item.speaking {
+            border-color: rgba(62, 207, 142, 0.5);
+            box-shadow: 0 0 12px rgba(62, 207, 142, 0.15);
         }
+
+        .player-info { text-align: left; flex: 1; }
+
+        /* ✅ ΝΕΟ: Row με όνομα + speaking dot + arrow + quality */
+        .player-name-row {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 0.2rem;
+        }
+
+        .player-name { font-weight: 700; font-size: 1rem; }
+
+        /* ✅ ΝΕΟ: Speaking indicator dot */
+        .speaking-dot {
+            width: 8px;
+            height: 8px;
+            min-width: 8px;
+            border-radius: 50%;
+            background: #3ecf8e;
+            opacity: 0;
+            transition: opacity 0.15s ease;
+            box-shadow: 0 0 6px #3ecf8e;
+        }
+
+        .speaking-dot.active {
+            opacity: 1;
+            animation: speakPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes speakPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.35); }
+        }
+
+        /* ✅ ΝΕΟ: Direction arrow */
+        .direction-arrow {
+            display: inline-block;
+            font-size: 0.8rem;
+            color: var(--accent1);
+            transition: transform 0.25s ease;
+        }
+
+        /* ✅ ΝΕΟ: Connection quality icon */
+        .quality-icon {
+            font-size: 0.72rem;
+            margin-left: auto;
+        }
+
+        .quality-good { color: #3ecf8e; }
+        .quality-medium { color: #f5a623; }
+        .quality-poor { color: #ff4d4d; }
 
         .player-distance {
             font-size: 0.8rem;
@@ -417,6 +433,7 @@
             background: rgba(255, 255, 255, 0.1);
             border-radius: 3px;
             overflow: hidden;
+            flex-shrink: 0;
         }
 
         .volume-fill {
@@ -433,7 +450,7 @@
             font-size: 0.9rem;
         }
 
-        /* ===== FOOTER (ίδιο στυλ με pgglegacy.gr) ===== */
+        /* ===== FOOTER ===== */
         .copyright_div {
             width: 100%;
             display: flex;
@@ -443,86 +460,46 @@
             text-align: center;
         }
 
-        .copyright {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-        }
-
-        .copyright a {
-            color: var(--text-muted);
-            text-decoration: underline;
-            transition: color 0.2s ease;
-        }
-
+        .copyright { color: var(--text-muted); font-size: 0.85rem; }
+        .copyright a { color: var(--text-muted); text-decoration: underline; transition: color 0.2s ease; }
         .copyright a:hover { color: #fff; }
 
-        /* ==========================================================================
-           ANIMATIONS (ίδιο με pgglegacy.gr)
-           ========================================================================== */
+        /* ===== ANIMATIONS ===== */
         @keyframes floatLogo {
             0%, 100% { transform: translateY(0); }
-            50%      { transform: translateY(-8px); }
+            50% { transform: translateY(-8px); }
         }
 
         @keyframes neonPulse {
             0%, 100% {
-                box-shadow:
-                        0 0 8px rgba(107, 45, 216, 0.35),
-                        0 0 18px rgba(107, 45, 216, 0.15);
+                box-shadow: 0 0 8px rgba(107, 45, 216, 0.35), 0 0 18px rgba(107, 45, 216, 0.15);
             }
             50% {
-                box-shadow:
-                        0 0 18px rgba(107, 45, 216, 0.7),
-                        0 0 32px rgba(107, 45, 216, 0.4);
+                box-shadow: 0 0 18px rgba(107, 45, 216, 0.7), 0 0 32px rgba(107, 45, 216, 0.4);
             }
         }
 
-        [data-aos] {
-            opacity: 0;
-            transition: opacity 0.8s ease, transform 0.8s ease;
-        }
-
+        [data-aos] { opacity: 0; transition: opacity 0.8s ease, transform 0.8s ease; }
         [data-aos="fade-up"] { transform: translateY(28px); }
         [data-aos="zoom-in"] { transform: scale(0.92); }
+        [data-aos].aos-animate { opacity: 1; transform: translateY(0) scale(1); }
 
-        [data-aos].aos-animate {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-        }
+        .logo { animation: floatLogo 4s ease-in-out infinite; }
+        button:hover:not(:disabled) { animation: neonPulse 1.8s ease-in-out infinite; }
 
-        .logo {
-            animation: floatLogo 4s ease-in-out infinite;
-        }
-
-        button:hover:not(:disabled) {
-            animation: neonPulse 1.8s ease-in-out infinite;
-        }
-
-        /* ==========================================================================
-           ACCESSIBILITY (ίδιο με pgglegacy.gr)
-           ========================================================================== */
+        /* ===== ACCESSIBILITY ===== */
         @media (prefers-reduced-motion: reduce) {
-            *,
-            *::before,
-            *::after {
+            *, *::before, *::after {
                 animation-duration: 0.01ms !important;
                 animation-iteration-count: 1 !important;
                 transition-duration: 0.01ms !important;
             }
-            [data-aos] {
-                opacity: 1 !important;
-                transform: none !important;
-            }
-            .logo {
-                animation: none !important;
-            }
+            [data-aos] { opacity: 1 !important; transform: none !important; }
+            .logo { animation: none !important; }
         }
 
         @media (forced-colors: active) {
-            button,
-            .voice_navbar_back {
-                border: 2px solid ButtonText;
-            }
+            button, .voice_navbar_back { border: 2px solid ButtonText; }
         }
 
         @media (max-width: 480px) {
@@ -572,9 +549,20 @@
                 <div id="micStatus">🎤 Μικρόφωνο: Ενεργό</div>
             </div>
 
+            <!-- ✅ ΝΕΟ: Mic Mode Toggle -->
+            <div class="mic-mode-toggle">
+                <button id="modeOpenBtn" class="mode-btn active" onclick="setMicMode('open')" type="button">🎙️ Ανοιχτό Μικρόφωνο</button>
+                <button id="modePttBtn" class="mode-btn" onclick="setMicMode('ptt')" type="button">⌨️ Push-to-Talk</button>
+            </div>
+
+            <div id="pttHint">Κράτα πατημένο το <strong>V</strong> για να μιλήσεις</div>
+
             <button class="mic-toggle" id="micToggleBtn" onclick="toggleMic()">🔇 Σίγαση Μικροφώνου</button>
 
-            <!-- ========== VOLUME SLIDER ========== -->
+            <!-- ✅ ΝΕΟ: Deafen Button -->
+            <button class="deafen-toggle" id="deafenToggleBtn" onclick="toggleDeafen()">🙉 Κλείσιμο Ήχου (Deafen)</button>
+
+            <!-- VOLUME SLIDER -->
             <div class="volume-section">
                 <div class="volume-label-row">
                     <span>🔊 Γενική Ένταση</span>
@@ -601,7 +589,6 @@
 <script>
     document.getElementById('copyright-year').textContent = new Date().getFullYear();
 
-    // Fade-in animations
     document.addEventListener('DOMContentLoaded', function() {
         setTimeout(function() {
             document.querySelectorAll('[data-aos]').forEach(function(el) {
@@ -610,7 +597,6 @@
         }, 50);
     });
 
-    // Custom cursor
     (function() {
         var cursor = document.getElementById('cursor');
         var glow = document.getElementById('cursorGlow');

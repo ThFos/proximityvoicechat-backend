@@ -29,6 +29,8 @@ const ICE_SERVERS = {
     ]
 };
 
+const SPEAKING_THRESHOLD = 15; // 0-255, πόσο δυνατό πρέπει να είναι το audio για να θεωρηθεί "μιλάει"
+
 // ============================================
 // STATE
 // ============================================
@@ -39,6 +41,10 @@ let localStream = null;
 let micEnabled = true;
 let audioCtx = null;
 let masterGainNode = null;
+let isDeafened = false;
+
+let micMode = localStorage.getItem('vc_micMode') || 'open'; // 'open' | 'ptt'
+let pttKeyDown = false;
 
 let masterVolume = parseFloat(localStorage.getItem('vc_masterVolume'));
 if (isNaN(masterVolume)) masterVolume = 1.0;
@@ -56,8 +62,13 @@ const errorMsg = document.getElementById('errorMsg');
 const playerNameEl = document.getElementById('playerName');
 const nearbyPlayersEl = document.getElementById('nearbyPlayers');
 const micToggleBtn = document.getElementById('micToggleBtn');
+const deafenToggleBtn = document.getElementById('deafenToggleBtn');
 const masterVolumeSlider = document.getElementById('masterVolumeSlider');
 const volumeValueDisplay = document.getElementById('volumeValueDisplay');
+const modeOpenBtn = document.getElementById('modeOpenBtn');
+const modePttBtn = document.getElementById('modePttBtn');
+const pttHint = document.getElementById('pttHint');
+const micStatusEl = document.getElementById('micStatus');
 
 codeInput.addEventListener('input', (e) => {
     e.target.value = e.target.value.toUpperCase();
@@ -88,7 +99,7 @@ if (masterVolumeSlider) {
 function setMasterVolume(value) {
     masterVolume = value;
     localStorage.setItem('vc_masterVolume', value);
-    if (masterGainNode) {
+    if (masterGainNode && !isDeafened) {
         masterGainNode.gain.value = value;
     }
 }
@@ -244,6 +255,9 @@ async function onLinkSuccess(message) {
         connectedScreen.style.display = 'block';
         playerNameEl.textContent = myName;
 
+        // Αρχικοποίηση mic mode (Open / PTT) μετά την απόκτηση microphone access
+        setMicMode(micMode);
+
     } catch (err) {
         console.error('Microphone access denied:', err.name, err.message);
         showError('Χρειάζεται πρόσβαση στο μικρόφωνο! Error: ' + err.name);
@@ -312,6 +326,7 @@ function createPeerConnection(targetUuid, targetName) {
         const ctx = getAudioContext();
         const source = ctx.createMediaStreamSource(remoteStream);
         const compressor = ctx.createDynamicsCompressor();
+        const analyser = ctx.createAnalyser(); // ✅ ΝΕΟ: για speaking detection
         const gainNode = ctx.createGain();
         const pannerNode = ctx.createStereoPanner();
 
@@ -321,7 +336,11 @@ function createPeerConnection(targetUuid, targetName) {
         compressor.attack.setValueAtTime(0, ctx.currentTime);
         compressor.release.setValueAtTime(0.25, ctx.currentTime);
 
+        analyser.fftSize = 512;
+
+        // Audio graph: source -> compressor -> [analyser tap] -> gain -> panner -> master
         source.connect(compressor);
+        compressor.connect(analyser);
         compressor.connect(gainNode);
         gainNode.connect(pannerNode);
         pannerNode.connect(masterGainNode);
@@ -331,6 +350,8 @@ function createPeerConnection(targetUuid, targetName) {
             peerData.audioElement = audioEl;
             peerData.sourceNode = source;
             peerData.compressorNode = compressor;
+            peerData.analyserNode = analyser;
+            peerData.dataArray = new Uint8Array(analyser.frequencyBinCount);
             peerData.gainNode = gainNode;
             peerData.pannerNode = pannerNode;
         }
@@ -356,11 +377,15 @@ function createPeerConnection(targetUuid, targetName) {
         audioElement: null,
         sourceNode: null,
         compressorNode: null,
+        analyserNode: null,
+        dataArray: null,
         gainNode: null,
         pannerNode: null,
         name: targetName,
         distance: 0,
-        angle: 0
+        angle: 0,
+        speaking: false,
+        quality: 'good'
     });
 
     return pc;
@@ -437,6 +462,7 @@ function closePeerConnection(uuid) {
 
         if (peerData.sourceNode) peerData.sourceNode.disconnect();
         if (peerData.compressorNode) peerData.compressorNode.disconnect();
+        if (peerData.analyserNode) peerData.analyserNode.disconnect();
         if (peerData.gainNode) peerData.gainNode.disconnect();
         if (peerData.pannerNode) peerData.pannerNode.disconnect();
         if (peerData.audioElement) peerData.audioElement.remove();
@@ -507,6 +533,76 @@ function updatePeerAudio(uuid, distance, angle) {
 }
 
 // ============================================
+// ✅ ΝΕΟ: Speaking Detection Loop
+// ============================================
+function updateSpeakingIndicators() {
+    peers.forEach((peerData, uuid) => {
+        if (!peerData.analyserNode || !peerData.dataArray) return;
+
+        peerData.analyserNode.getByteFrequencyData(peerData.dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < peerData.dataArray.length; i++) {
+            sum += peerData.dataArray[i];
+        }
+        const avg = sum / peerData.dataArray.length;
+        const speaking = avg > SPEAKING_THRESHOLD;
+
+        if (speaking !== peerData.speaking) {
+            peerData.speaking = speaking;
+
+            const item = document.querySelector(`.player-item[data-uuid="${uuid}"]`);
+            if (item) {
+                item.classList.toggle('speaking', speaking);
+                const dot = item.querySelector('.speaking-dot');
+                if (dot) dot.classList.toggle('active', speaking);
+            }
+        }
+    });
+}
+setInterval(updateSpeakingIndicators, 100);
+
+// ============================================
+// ✅ ΝΕΟ: Connection Quality Monitoring
+// ============================================
+async function updateConnectionQuality() {
+    for (const [uuid, peerData] of peers.entries()) {
+        const pc = peerData.peerConnection;
+        if (!pc || pc.connectionState !== 'connected') continue;
+
+        try {
+            const stats = await pc.getStats();
+            let packetsLost = 0;
+            let packetsReceived = 0;
+
+            stats.forEach(report => {
+                if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+                    packetsLost = report.packetsLost || 0;
+                    packetsReceived = report.packetsReceived || 0;
+                }
+            });
+
+            const total = packetsLost + packetsReceived;
+            const lossRatio = total > 0 ? packetsLost / total : 0;
+
+            let quality = 'good';
+            if (lossRatio > 0.1) quality = 'poor';
+            else if (lossRatio > 0.03) quality = 'medium';
+
+            peerData.quality = quality;
+
+            const icon = document.querySelector(`.player-item[data-uuid="${uuid}"] .quality-icon`);
+            if (icon) {
+                icon.className = 'quality-icon quality-' + quality;
+            }
+        } catch (err) {
+            // αγνόησε σιωπηλά, όχι κρίσιμο
+        }
+    }
+}
+setInterval(updateConnectionQuality, 4000);
+
+// ============================================
 // UI Rendering
 // ============================================
 function renderNearbyPlayersList(nearbyPlayers) {
@@ -517,10 +613,17 @@ function renderNearbyPlayersList(nearbyPlayers) {
 
     nearbyPlayersEl.innerHTML = nearbyPlayers.map(player => {
         const volumePercent = Math.round(calculateVolume(player.distance) * 100);
+        const angle = typeof player.angle === 'number' ? player.angle : 0;
+
         return `
-            <div class="player-item">
+            <div class="player-item" data-uuid="${player.uuid}">
                 <div class="player-info">
-                    <div class="player-name">${player.name}</div>
+                    <div class="player-name-row">
+                        <span class="speaking-dot"></span>
+                        <span class="player-name">${player.name}</span>
+                        <span class="direction-arrow" style="transform: rotate(${angle}deg)">↑</span>
+                        <span class="quality-icon quality-good">📶</span>
+                    </div>
                     <div class="player-distance">${player.distance.toFixed(1)}m</div>
                 </div>
                 <div class="volume-bar">
@@ -532,9 +635,12 @@ function renderNearbyPlayersList(nearbyPlayers) {
 }
 
 // ============================================
-// Mic Toggle
+// Mic Toggle (Open Mic mode)
 // ============================================
 function toggleMic() {
+    if (micMode === 'ptt') return; // δεν εφαρμόζεται σε PTT mode
+    if (isDeafened) return; // δεν μπορείς να unmute ενώ είσαι deafened
+
     micEnabled = !micEnabled;
 
     if (localStream) {
@@ -543,16 +649,121 @@ function toggleMic() {
         });
     }
 
+    updateMicStatusDisplay(micEnabled);
+
     if (micEnabled) {
         micToggleBtn.textContent = '🔇 Σίγαση Μικροφώνου';
         micToggleBtn.classList.remove('muted');
-        document.getElementById('micStatus').textContent = '🎤 Μικρόφωνο: Ενεργό';
     } else {
         micToggleBtn.textContent = '🎤 Ενεργοποίηση Μικροφώνου';
         micToggleBtn.classList.add('muted');
-        document.getElementById('micStatus').textContent = '🔇 Μικρόφωνο: Σίγαση';
     }
 }
+
+// ============================================
+// ✅ ΝΕΟ: Mic Mode (Open / Push-to-Talk)
+// ============================================
+function setMicMode(mode) {
+    micMode = mode;
+    localStorage.setItem('vc_micMode', mode);
+
+    if (modeOpenBtn) modeOpenBtn.classList.toggle('active', mode === 'open');
+    if (modePttBtn) modePttBtn.classList.toggle('active', mode === 'ptt');
+    if (pttHint) pttHint.style.display = mode === 'ptt' ? 'block' : 'none';
+    if (micToggleBtn) micToggleBtn.style.display = mode === 'open' ? 'block' : 'none';
+
+    if (localStream && !isDeafened) {
+        if (mode === 'ptt') {
+            localStream.getAudioTracks().forEach(t => t.enabled = false);
+            updateMicStatusDisplay(false);
+        } else {
+            localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
+            updateMicStatusDisplay(micEnabled);
+        }
+    }
+}
+
+function setMicTrackEnabled(enabled) {
+    if (!localStream || isDeafened) return;
+    localStream.getAudioTracks().forEach(track => track.enabled = enabled);
+    updateMicStatusDisplay(enabled);
+}
+
+function updateMicStatusDisplay(enabled) {
+    if (!micStatusEl) return;
+
+    if (isDeafened) {
+        micStatusEl.textContent = '🔇 Deafened';
+        return;
+    }
+
+    if (micMode === 'ptt') {
+        micStatusEl.textContent = enabled ? '🎤 Μιλάς...' : '⌨️ Κράτα το V για να μιλήσεις';
+        return;
+    }
+
+    micStatusEl.textContent = enabled ? '🎤 Μικρόφωνο: Ενεργό' : '🔇 Μικρόφωνο: Σίγαση';
+}
+
+// ============================================
+// ✅ ΝΕΟ: Deafen Toggle
+// ============================================
+function toggleDeafen() {
+    isDeafened = !isDeafened;
+
+    if (isDeafened) {
+        if (masterGainNode) masterGainNode.gain.value = 0;
+        if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = false);
+
+        deafenToggleBtn.textContent = '🔇 Ενεργοποίηση Ήχου';
+        deafenToggleBtn.classList.add('active');
+        updateMicStatusDisplay(false);
+    } else {
+        if (masterGainNode) masterGainNode.gain.value = masterVolume;
+
+        if (localStream) {
+            if (micMode === 'open') {
+                localStream.getAudioTracks().forEach(t => t.enabled = micEnabled);
+            }
+            // σε PTT mode, παραμένει muted μέχρι να πατηθεί το V
+        }
+
+        deafenToggleBtn.textContent = '🙉 Κλείσιμο Ήχου (Deafen)';
+        deafenToggleBtn.classList.remove('active');
+        updateMicStatusDisplay(micMode === 'open' ? micEnabled : false);
+    }
+}
+
+// ============================================
+// ✅ ΝΕΟ: Keyboard Shortcuts (M = mute, V = PTT)
+// ============================================
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (connectedScreen.style.display !== 'block') return;
+
+    const key = e.key.toLowerCase();
+
+    if (micMode === 'ptt' && key === 'v' && !e.repeat) {
+        pttKeyDown = true;
+        setMicTrackEnabled(true);
+        return;
+    }
+
+    if (micMode === 'open' && key === 'm' && !e.repeat) {
+        toggleMic();
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    const key = e.key.toLowerCase();
+
+    if (micMode === 'ptt' && key === 'v') {
+        pttKeyDown = false;
+        setMicTrackEnabled(false);
+    }
+});
 
 // ============================================
 // INIT
