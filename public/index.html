@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a1921">
     <title>Voice Chat | PGG Legacy</title>
     <meta name="robots" content="noindex, nofollow">
 
@@ -35,14 +36,58 @@
 
         body {
             display: flex;
+            flex-direction: column;
+        }
+
+        /* ===== NAVBAR (ίδιο στυλ με pgglegacy.gr) ===== */
+        .voice_navbar {
+            position: fixed;
+            inset: 0 0 auto 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 5.2rem;
+            padding: 0 1.5rem 0 1.5rem;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            z-index: 100;
+        }
+
+        .voice_navbar_logo_img {
+            width: 9.5rem;
+            height: auto;
+        }
+
+        .voice_navbar_back {
+            font-size: 0.95rem;
+            font-weight: 700;
+            padding: 0.6rem 1.1rem;
+            text-decoration: none;
+            color: #fff;
+            border: 1px solid var(--accent1);
+            border-radius: var(--roundness);
+            white-space: nowrap;
+            transition: all var(--transition-std);
+        }
+
+        .voice_navbar_back:hover {
+            border-color: var(--accent2);
+            background: var(--accent2);
+        }
+
+        /* ===== MAIN CONTENT ===== */
+        .voice_main {
+            flex: 1;
+            display: flex;
             align-items: center;
             justify-content: center;
-            padding: 2rem 1rem;
+            padding: calc(5.2rem + 2rem) 1rem 2rem;
         }
 
         .logo {
             display: block;
-            width: 220px;
+            width: 200px;
             height: auto;
             margin: 0 auto 1.5rem;
         }
@@ -71,7 +116,7 @@
             line-height: 1.5;
         }
 
-        /* ===== LINK SCREEN - Input style όπως το form-group του police form ===== */
+        /* ===== LINK SCREEN ===== */
         .form-group {
             display: flex;
             flex-direction: column;
@@ -179,7 +224,7 @@
             background: rgba(255, 255, 255, 0.1);
         }
 
-        /* ===== VOLUME SLIDER (ΝΕΟ) ===== */
+        /* ===== VOLUME SLIDER ===== */
         .volume-section {
             background: var(--bg1);
             border: 1px solid var(--border-subtle);
@@ -246,7 +291,7 @@
             background: rgba(255, 255, 255, 0.1);
         }
 
-        /* ===== Nearby Players List - όπως .list-item του leaderboard ===== */
+        /* ===== Nearby Players List ===== */
         .nearby-title {
             font-size: 0.8rem;
             color: var(--text-muted);
@@ -308,55 +353,100 @@
             font-size: 0.9rem;
         }
 
+        /* ===== FOOTER (ίδιο στυλ με pgglegacy.gr) ===== */
+        .copyright_div {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            padding: 1.5rem 1rem;
+            background: #000;
+            text-align: center;
+        }
+
+        .copyright {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .copyright a {
+            color: var(--text-muted);
+            text-decoration: underline;
+            transition: color 0.2s ease;
+        }
+
+        .copyright a:hover { color: #fff; }
+
         @media (max-width: 480px) {
             .container { padding: 1.75rem 1.25rem; }
-            .logo { width: 180px; }
+            .logo { width: 170px; }
+            .voice_navbar { padding: 0 1rem; }
+            .voice_navbar_logo_img { width: 7.5rem; }
+            .voice_navbar_back { font-size: 0.85rem; padding: 0.5rem 0.8rem; }
         }
     </style>
 </head>
 <body>
 
-<div style="width: 100%; max-width: 420px;">
-    <img class="logo" src="https://pgglegacy.gr/media/logo.svg" alt="PGG Legacy">
+<nav class="voice_navbar" aria-label="Voice Chat Navigation">
+    <a href="https://pgglegacy.gr" aria-label="PGG Legacy - Αρχική">
+        <img class="voice_navbar_logo_img" src="https://pgglegacy.gr/media/logo_small.svg" alt="PGG Legacy Logo">
+    </a>
+    <a href="https://pgglegacy.gr" class="voice_navbar_back">← Πίσω στο site</a>
+</nav>
 
-    <!-- ========== LINK CODE SCREEN ========== -->
-    <div class="container" id="linkScreen">
-        <h1>🎤 Voice Chat</h1>
-        <p class="subtitle">Γράψε <strong>/vc</strong> στο Minecraft chat και εισάγαγε τον κωδικό που θα λάβεις</p>
+<main class="voice_main">
+    <div style="width: 100%; max-width: 420px;">
+        <img class="logo" src="https://pgglegacy.gr/media/logo.svg" alt="PGG Legacy">
 
-        <div class="form-group">
-            <input type="text" id="codeInput" maxlength="6" placeholder="------" autocomplete="off">
-        </div>
-        <button id="linkButton" onclick="submitLinkCode()">Σύνδεση</button>
+        <!-- ========== LINK CODE SCREEN ========== -->
+        <div class="container" id="linkScreen">
+            <h1>🎤 Voice Chat</h1>
+            <p class="subtitle">Γράψε <strong>/vc</strong> στο Minecraft chat και εισάγαγε τον κωδικό που θα λάβεις</p>
 
-        <div id="errorMsg"></div>
-    </div>
-
-    <!-- ========== CONNECTED SCREEN ========== -->
-    <div class="container" id="connectedScreen">
-        <div class="status-box">
-            <div id="playerName">-</div>
-            <div id="micStatus">🎤 Μικρόφωνο: Ενεργό</div>
-        </div>
-
-        <button class="mic-toggle" id="micToggleBtn" onclick="toggleMic()">🔇 Σίγαση Μικροφώνου</button>
-
-        <!-- ========== VOLUME SLIDER (ΝΕΟ) ========== -->
-        <div class="volume-section">
-            <div class="volume-label-row">
-                <span>🔊 Γενική Ένταση</span>
-                <span class="value" id="volumeValueDisplay">100%</span>
+            <div class="form-group">
+                <input type="text" id="codeInput" maxlength="6" placeholder="------" autocomplete="off">
             </div>
-            <input type="range" id="masterVolumeSlider" min="0" max="100" value="100">
+            <button id="linkButton" onclick="submitLinkCode()">Σύνδεση</button>
+
+            <div id="errorMsg"></div>
         </div>
 
-        <div class="nearby-title">Κοντινοί Παίκτες</div>
-        <div id="nearbyPlayers">
-            <div class="no-players">Κανένας παίκτης κοντά σου</div>
+        <!-- ========== CONNECTED SCREEN ========== -->
+        <div class="container" id="connectedScreen">
+            <div class="status-box">
+                <div id="playerName">-</div>
+                <div id="micStatus">🎤 Μικρόφωνο: Ενεργό</div>
+            </div>
+
+            <button class="mic-toggle" id="micToggleBtn" onclick="toggleMic()">🔇 Σίγαση Μικροφώνου</button>
+
+            <!-- ========== VOLUME SLIDER ========== -->
+            <div class="volume-section">
+                <div class="volume-label-row">
+                    <span>🔊 Γενική Ένταση</span>
+                    <span class="value" id="volumeValueDisplay">100%</span>
+                </div>
+                <input type="range" id="masterVolumeSlider" min="0" max="100" value="100">
+            </div>
+
+            <div class="nearby-title">Κοντινοί Παίκτες</div>
+            <div id="nearbyPlayers">
+                <div class="no-players">Κανένας παίκτης κοντά σου</div>
+            </div>
         </div>
     </div>
-</div>
+</main>
 
+<footer class="copyright_div">
+    <p class="copyright">
+        &copy; <span id="copyright-year"></span> PGG Legacy — All rights reserved. |
+        <a href="https://pgglegacy.gr/privacy">Privacy Policy</a>
+    </p>
+</footer>
+
+<script>
+    document.getElementById('copyright-year').textContent = new Date().getFullYear();
+</script>
 <script src="client.js"></script>
 </body>
 </html>
