@@ -3,13 +3,29 @@
 // ============================================
 const BACKEND_URL = 'wss://voice.pgglegacy.gr/voice';
 
-let MAX_DISTANCE = 20;       // default, θα ενημερωθεί από το backend
-let VOLUME_CURVE = 'linear'; // default, θα ενημερωθεί από το backend
+let MAX_DISTANCE = 20;
+let VOLUME_CURVE = 'linear';
+let ENABLE_3D_AUDIO = true;
 
 const ICE_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        },
+        {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+        }
     ]
 };
 
@@ -21,6 +37,7 @@ let myUuid = null;
 let myName = null;
 let localStream = null;
 let micEnabled = true;
+let audioCtx = null; // ✅ ΝΕΟ: Web Audio API context
 
 const peers = new Map();
 
@@ -43,6 +60,19 @@ codeInput.addEventListener('input', (e) => {
 codeInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') submitLinkCode();
 });
+
+// ============================================
+// Web Audio API Context (lazy init, μέσα σε user gesture)
+// ============================================
+function getAudioContext() {
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+    }
+    return audioCtx;
+}
 
 // ============================================
 // WebSocket Connection
@@ -79,6 +109,10 @@ function submitLinkCode() {
         showError('Ο κωδικός πρέπει να έχει 6 χαρακτήρες');
         return;
     }
+
+    // ✅ Δημιουργούμε το AudioContext ΜΕΣΑ στο click handler
+    // για να "κλειδώσει" το user gesture (σημαντικό για iOS Safari)
+    getAudioContext();
 
     linkButton.disabled = true;
     linkButton.textContent = 'Σύνδεση...';
@@ -141,13 +175,15 @@ async function handleServerMessage(message) {
     }
 }
 
-// Ενημερώνει τοπικά το MAX_DISTANCE/VOLUME_CURVE όποτε έρχονται από τον server
 function syncConfig(message) {
     if (typeof message.proximityRange === 'number') {
         MAX_DISTANCE = message.proximityRange;
     }
     if (typeof message.volumeCurve === 'string') {
         VOLUME_CURVE = message.volumeCurve;
+    }
+    if (typeof message.enable3dAudio === 'boolean') {
+        ENABLE_3D_AUDIO = message.enable3dAudio;
     }
 }
 
@@ -159,7 +195,7 @@ async function onLinkSuccess(message) {
     myName = message.name;
     syncConfig(message);
 
-    console.log(`✓ Linked as ${myName} (${myUuid}) | range=${MAX_DISTANCE} curve=${VOLUME_CURVE}`);
+    console.log(`✓ Linked as ${myName} (${myUuid}) | range=${MAX_DISTANCE} curve=${VOLUME_CURVE} 3d=${ENABLE_3D_AUDIO}`);
 
     try {
         localStream = await navigator.mediaDevices.getUserMedia({
@@ -176,8 +212,8 @@ async function onLinkSuccess(message) {
         playerNameEl.textContent = myName;
 
     } catch (err) {
-        console.error('Microphone access denied:', err);
-        showError('Χρειάζεται πρόσβαση στο μικρόφωνο για να λειτουργήσει το voice chat!');
+        console.error('Microphone access denied:', err.name, err.message);
+        showError('Χρειάζεται πρόσβαση στο μικρόφωνο! Error: ' + err.name);
     }
 }
 
@@ -197,7 +233,7 @@ function handleProximityUpdate(nearbyPlayers) {
         if (!peers.has(player.uuid)) {
             initiateConnection(player.uuid, player.name);
         }
-        updatePeerDistance(player.uuid, player.distance);
+        updatePeerAudio(player.uuid, player.distance, player.angle);
     });
 
     renderNearbyPlayersList(nearbyPlayers);
@@ -222,15 +258,55 @@ function createPeerConnection(targetUuid, targetName) {
         pc.addTrack(track, localStream);
     });
 
+    // ✅ ΝΕΟ: Πλήρες Web Audio API graph
     pc.ontrack = (event) => {
+        const remoteStream = event.streams[0];
+
+        // --- Workaround για Safari/WebKit bug ---
+        // Το remote stream πρέπει να είναι attached σε playing <audio>
+        // element αλλιώς δεν "τρέχει" σωστά μέσα στο Web Audio API graph.
+        // Το κάνουμε muted γιατί ο πραγματικός ήχος θα βγει από το graph.
         const audioEl = document.createElement('audio');
-        audioEl.srcObject = event.streams[0];
+        audioEl.srcObject = remoteStream;
         audioEl.autoplay = true;
+        audioEl.playsInline = true;
+        audioEl.muted = true;
         document.body.appendChild(audioEl);
+
+        const playPromise = audioEl.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(err => {
+                console.error('Hidden audio element blocked:', err);
+                showEnableAudioButton();
+            });
+        }
+
+        // --- Πραγματικό audio processing graph ---
+        const ctx = getAudioContext();
+        const source = ctx.createMediaStreamSource(remoteStream);
+        const compressor = ctx.createDynamicsCompressor();
+        const gainNode = ctx.createGain();
+        const pannerNode = ctx.createStereoPanner();
+
+        // Compressor settings: εξομαλύνει δυνατά/σιγανά μικρόφωνα
+        compressor.threshold.setValueAtTime(-50, ctx.currentTime);
+        compressor.knee.setValueAtTime(40, ctx.currentTime);
+        compressor.ratio.setValueAtTime(12, ctx.currentTime);
+        compressor.attack.setValueAtTime(0, ctx.currentTime);
+        compressor.release.setValueAtTime(0.25, ctx.currentTime);
+
+        source.connect(compressor);
+        compressor.connect(gainNode);
+        gainNode.connect(pannerNode);
+        pannerNode.connect(ctx.destination);
 
         const peerData = peers.get(targetUuid);
         if (peerData) {
             peerData.audioElement = audioEl;
+            peerData.sourceNode = source;
+            peerData.compressorNode = compressor;
+            peerData.gainNode = gainNode;
+            peerData.pannerNode = pannerNode;
         }
     };
 
@@ -247,13 +323,27 @@ function createPeerConnection(targetUuid, targetName) {
 
     pc.onconnectionstatechange = () => {
         console.log(`Connection with ${targetName}: ${pc.connectionState}`);
+
+        let statusEl = document.getElementById('debugStatus');
+        if (!statusEl) {
+            statusEl = document.createElement('div');
+            statusEl.id = 'debugStatus';
+            statusEl.style.cssText = 'position:fixed;bottom:10px;left:10px;right:10px;background:#000;color:#0f0;padding:8px;font-size:11px;z-index:9999;border-radius:8px;font-family:monospace;';
+            document.body.appendChild(statusEl);
+        }
+        statusEl.textContent = `${targetName}: ${pc.connectionState}`;
     };
 
     peers.set(targetUuid, {
         peerConnection: pc,
         audioElement: null,
+        sourceNode: null,
+        compressorNode: null,
+        gainNode: null,
+        pannerNode: null,
         name: targetName,
-        distance: 0
+        distance: 0,
+        angle: 0
     });
 
     return pc;
@@ -327,36 +417,77 @@ function closePeerConnection(uuid) {
     const peerData = peers.get(uuid);
     if (peerData) {
         peerData.peerConnection.close();
-        if (peerData.audioElement) {
-            peerData.audioElement.remove();
-        }
+
+        if (peerData.sourceNode) peerData.sourceNode.disconnect();
+        if (peerData.compressorNode) peerData.compressorNode.disconnect();
+        if (peerData.gainNode) peerData.gainNode.disconnect();
+        if (peerData.pannerNode) peerData.pannerNode.disconnect();
+        if (peerData.audioElement) peerData.audioElement.remove();
+
         peers.delete(uuid);
     }
 }
 
 // ============================================
-// Dynamic Volume (τώρα υποστηρίζει 2 καμπύλες)
+// Audio Enable Fallback Button (autoplay block)
+// ============================================
+function showEnableAudioButton() {
+    if (document.getElementById('enableAudioBtn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'enableAudioBtn';
+    btn.textContent = '🔊 Πάτα εδώ για να ενεργοποιηθεί ο ήχος';
+    btn.style.cssText = `
+        position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+        background: #6b2dd8; color: white; border: none; padding: 12px 20px;
+        border-radius: 0.75rem; font-family: 'Space Grotesk', sans-serif;
+        font-size: 14px; z-index: 9999; cursor: pointer;
+    `;
+    btn.onclick = () => {
+        getAudioContext(); // resume αν χρειάζεται
+        peers.forEach(peerData => {
+            if (peerData.audioElement) {
+                peerData.audioElement.play().catch(e => console.error('Still blocked:', e));
+            }
+        });
+        btn.remove();
+    };
+    document.body.appendChild(btn);
+}
+
+// ============================================
+// Dynamic Volume & Panning
 // ============================================
 function calculateVolume(distance) {
     const ratio = Math.max(0, 1 - (distance / MAX_DISTANCE));
 
     if (VOLUME_CURVE === 'exponential') {
-        // Πιο απότομη μείωση - η ένταση πέφτει γρήγορα όσο αυξάνεται η απόσταση
         return Math.pow(ratio, 2);
     }
 
-    // linear (default) - σταθερή/ομαλή μείωση
     return ratio;
 }
 
-function updatePeerDistance(uuid, distance) {
+// ✅ ΝΕΟ: Ενημερώνει gain (ένταση) ΚΑΙ pan (κατεύθυνση)
+function updatePeerAudio(uuid, distance, angle) {
     const peerData = peers.get(uuid);
     if (!peerData) return;
 
     peerData.distance = distance;
+    peerData.angle = angle;
 
-    if (peerData.audioElement) {
-        peerData.audioElement.volume = calculateVolume(distance);
+    if (peerData.gainNode) {
+        peerData.gainNode.gain.value = calculateVolume(distance);
+    }
+
+    if (peerData.pannerNode) {
+        if (ENABLE_3D_AUDIO && typeof angle === 'number') {
+            // sin(angle) δίνει ομαλή μετάβαση -1 (αριστερά) έως 1 (δεξιά)
+            const panValue = Math.sin(angle * Math.PI / 180);
+            peerData.pannerNode.pan.value = panValue;
+        } else {
+            peerData.pannerNode.pan.value = 0; // κέντρο αν είναι off
+        }
     }
 }
 

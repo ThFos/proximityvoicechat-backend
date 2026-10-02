@@ -16,9 +16,9 @@ let linkCodes = new Map();
 let webClients = new Map();
 let uuidToWs = new Map();
 
-// ✅ Τώρα είναι "let" ώστε να μπορεί να αλλάξει δυναμικά μέσω του plugin
 let PROXIMITY_RANGE = 20;
 let VOLUME_CURVE = 'linear';
+let ENABLE_3D_AUDIO = true; // ✅ ΝΕΟ
 
 server.on('upgrade', (request, socket, head) => {
     const pathname = request.url;
@@ -81,15 +81,18 @@ function handleConfigUpdate(message) {
     if (typeof message.volumeCurve === 'string') {
         VOLUME_CURVE = message.volumeCurve;
     }
-    console.log(`⚙️  Config updated: range=${PROXIMITY_RANGE}, curve=${VOLUME_CURVE}`);
+    if (typeof message.enable3dAudio === 'boolean') {
+        ENABLE_3D_AUDIO = message.enable3dAudio; // ✅ ΝΕΟ
+    }
+    console.log(`⚙️  Config updated: range=${PROXIMITY_RANGE}, curve=${VOLUME_CURVE}, 3d=${ENABLE_3D_AUDIO}`);
 
-    // Ενημέρωσε όλους τους ήδη συνδεδεμένους web clients με τις νέες ρυθμίσεις
     for (const ws of uuidToWs.values()) {
         if (ws.readyState === ws.OPEN) {
             ws.send(JSON.stringify({
                 type: 'config_update',
                 proximityRange: PROXIMITY_RANGE,
-                volumeCurve: VOLUME_CURVE
+                volumeCurve: VOLUME_CURVE,
+                enable3dAudio: ENABLE_3D_AUDIO // ✅ ΝΕΟ
             }));
         }
     }
@@ -104,6 +107,7 @@ function handleLocationUpdate(players) {
             x: player.x,
             y: player.y,
             z: player.z,
+            yaw: player.yaw, // ✅ ΝΕΟ
             world: player.world
         });
     });
@@ -178,13 +182,13 @@ function handleLinkCode(ws, code) {
     uuidToWs.set(linkData.uuid, ws);
     linkCodes.delete(code);
 
-    // ✅ Στέλνουμε τώρα και τις τρέχουσες ρυθμίσεις μαζί με το link_success
     ws.send(JSON.stringify({
         type: 'link_success',
         uuid: linkData.uuid,
         name: linkData.name,
         proximityRange: PROXIMITY_RANGE,
-        volumeCurve: VOLUME_CURVE
+        volumeCurve: VOLUME_CURVE,
+        enable3dAudio: ENABLE_3D_AUDIO // ✅ ΝΕΟ
     }));
 
     if (minecraftConnection) {
@@ -209,23 +213,26 @@ function calculateProximityAndNotify() {
     const players = Array.from(playerLocations.entries());
 
     for (let i = 0; i < players.length; i++) {
-        const [uuid1, loc1] = players[i];
+        const [uuid1, loc1] = players[i]; // loc1 = ο "ακροατής"
         const nearbyPlayers = [];
 
         for (let j = 0; j < players.length; j++) {
             if (i === j) continue;
 
-            const [uuid2, loc2] = players[j];
+            const [uuid2, loc2] = players[j]; // loc2 = αυτός που μιλάει
 
             if (loc1.world !== loc2.world) continue;
 
             const distance = calculateDistance(loc1, loc2);
 
             if (distance <= PROXIMITY_RANGE) {
+                const angle = calculateRelativeAngle(loc1, loc2); // ✅ ΝΕΟ
+
                 nearbyPlayers.push({
                     uuid: uuid2,
                     name: loc2.name,
-                    distance: distance
+                    distance: distance,
+                    angle: angle // ✅ ΝΕΟ: -180 (πίσω-αριστερά) έως 180 (πίσω-δεξιά), 0 = μπροστά
                 });
             }
         }
@@ -236,7 +243,8 @@ function calculateProximityAndNotify() {
                 type: 'proximity_update',
                 nearbyPlayers: nearbyPlayers,
                 proximityRange: PROXIMITY_RANGE,
-                volumeCurve: VOLUME_CURVE
+                volumeCurve: VOLUME_CURVE,
+                enable3dAudio: ENABLE_3D_AUDIO // ✅ ΝΕΟ
             }));
         }
     }
@@ -247,6 +255,22 @@ function calculateDistance(loc1, loc2) {
     const dy = loc1.y - loc2.y;
     const dz = loc1.z - loc2.z;
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+// ✅ ΝΕΟ: Υπολογίζει τη γωνία του "speaker" σχετικά με το πού κοιτάει ο "listener"
+// Επιστρέφει: 0 = ακριβώς μπροστά, 90 = δεξιά, -90 = αριστερά, ±180 = πίσω
+function calculateRelativeAngle(listener, speaker) {
+    const dx = speaker.x - listener.x;
+    const dz = speaker.z - listener.z;
+
+    // Γωνία προς τον speaker, σε Minecraft yaw convention
+    // (yaw: 0=South/+Z, 90=West/-X, 180=North/-Z, 270=East/+X)
+    const angleToSpeaker = (Math.atan2(-dx, dz) * 180 / Math.PI + 360) % 360;
+
+    let relativeAngle = angleToSpeaker - listener.yaw;
+    relativeAngle = ((relativeAngle + 180) % 360 + 360) % 360 - 180;
+
+    return relativeAngle;
 }
 
 app.get('/', (req, res) => {
