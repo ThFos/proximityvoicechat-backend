@@ -15,7 +15,7 @@ let playerLocations = new Map();
 let linkCodes = new Map();
 let webClients = new Map();
 let uuidToWs = new Map();
-let occludedPairsSet = new Set(); // ✅ ΝΕΟ
+let occludedPairsSet = new Set();
 
 let PROXIMITY_RANGE = 20;
 let VOLUME_CURVE = 'linear';
@@ -113,7 +113,6 @@ function handleLocationUpdate(players, occludedPairs) {
         });
     });
 
-    // ✅ ΝΕΟ: Αποθήκευση occluded pairs σε Set για γρήγορο lookup
     occludedPairsSet = new Set();
     if (Array.isArray(occludedPairs)) {
         occludedPairs.forEach(pair => {
@@ -178,6 +177,10 @@ webClientWSS.on('connection', (ws) => {
             uuidToWs.delete(clientData.uuid);
             webClients.delete(ws);
             console.log(`Client disconnected: ${clientData.name}`);
+
+            // ✅ ΝΕΟ: Όταν αποσυνδέεται ένας παίκτης, ξαναϋπολόγισε proximity
+            // ώστε οι υπόλοιποι να μάθουν άμεσα ότι αυτός έφυγε
+            calculateProximityAndNotify();
         }
     });
 
@@ -218,16 +221,21 @@ function handleLinkCode(ws, code) {
     }
 
     console.log(`✓ Linked: ${linkData.name}`);
+
+    // ✅ ΝΕΟ: Μόλις συνδεθεί κάποιος, ξαναϋπολόγισε proximity για όλους
+    // ώστε όποιος ήταν ήδη κοντά του να ενημερωθεί άμεσα (fix για race condition)
+    calculateProximityAndNotify();
 }
 
 function relayWebRTCMessage(message) {
     const targetWs = uuidToWs.get(message.targetUuid);
     if (targetWs && targetWs.readyState === targetWs.OPEN) {
         targetWs.send(JSON.stringify(message));
+    } else {
+        console.warn(`⚠️  Could not relay ${message.type} to ${message.targetUuid} - not connected`);
     }
 }
 
-// ✅ ΝΕΟ: Προωθεί το speaking status του web client στο Minecraft plugin
 function handleSpeakingStatus(ws, speaking) {
     const clientData = webClients.get(ws);
     if (!clientData) return;
@@ -247,6 +255,11 @@ function calculateProximityAndNotify() {
 
     for (let i = 0; i < players.length; i++) {
         const [uuid1, loc1] = players[i];
+
+        // Αν ο uuid1 δεν έχει συνδέσει τον web client του, μη χάνεις χρόνο
+        const ws1 = uuidToWs.get(uuid1);
+        if (!ws1 || ws1.readyState !== ws1.OPEN) continue;
+
         const nearbyPlayers = [];
 
         for (let j = 0; j < players.length; j++) {
@@ -256,32 +269,38 @@ function calculateProximityAndNotify() {
 
             if (loc1.world !== loc2.world) continue;
 
+            // ✅ ΝΕΟ / ΚΡΙΣΙΜΗ ΔΙΟΡΘΩΣΗ:
+            // Μην συμπεριλαμβάνεις παίκτες που ΔΕΝ έχουν συνδέσει ακόμα τον web client τους.
+            // Χωρίς αυτό, ο client Α προσπαθεί να στείλει WebRTC offer σε παίκτη Β που
+            // δεν είναι ακόμα συνδεδεμένος στο /voice websocket, το offer χάνεται σιωπηλά,
+            // και επειδή το peers.has(B) γίνεται ήδη true, ο Α ΔΕΝ ξαναπροσπαθεί ποτέ -
+            // μέχρι ο Β να βγει εκτός εμβέλειας και να ξαναμπεί.
+            const ws2 = uuidToWs.get(uuid2);
+            if (!ws2 || ws2.readyState !== ws2.OPEN) continue;
+
             const distance = calculateDistance(loc1, loc2);
 
             if (distance <= PROXIMITY_RANGE) {
                 const angle = calculateRelativeAngle(loc1, loc2);
-                const occluded = isOccluded(uuid1, uuid2); // ✅ ΝΕΟ
+                const occluded = isOccluded(uuid1, uuid2);
 
                 nearbyPlayers.push({
                     uuid: uuid2,
                     name: loc2.name,
                     distance: distance,
                     angle: angle,
-                    occluded: occluded // ✅ ΝΕΟ
+                    occluded: occluded
                 });
             }
         }
 
-        const ws = uuidToWs.get(uuid1);
-        if (ws && ws.readyState === ws.OPEN) {
-            ws.send(JSON.stringify({
-                type: 'proximity_update',
-                nearbyPlayers: nearbyPlayers,
-                proximityRange: PROXIMITY_RANGE,
-                volumeCurve: VOLUME_CURVE,
-                enable3dAudio: ENABLE_3D_AUDIO
-            }));
-        }
+        ws1.send(JSON.stringify({
+            type: 'proximity_update',
+            nearbyPlayers: nearbyPlayers,
+            proximityRange: PROXIMITY_RANGE,
+            volumeCurve: VOLUME_CURVE,
+            enable3dAudio: ENABLE_3D_AUDIO
+        }));
     }
 }
 
