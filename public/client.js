@@ -43,13 +43,16 @@ let listeningForKey = null;
 let masterVolume = parseFloat(localStorage.getItem('vc_masterVolume'));
 if (isNaN(masterVolume)) masterVolume = 1.0;
 
-// ✅ ΝΕΟ: Local speaking detection (για nametag indicator)
+// ✅ Local speaking detection (για nametag indicator)
 let localAnalyser = null;
 let localDataArray = null;
 let localSpeaking = false;
 
-// ✅ ΝΕΟ: Κρατάει proximity update μέχρι να είναι έτοιμο το mic (fix για race condition)
+// ✅ Κρατάει proximity update μέχρι να είναι έτοιμο το mic (fix για race condition)
 let pendingProximityUpdate = null;
+
+// ✅ ΝΕΟ: Κρατάει offers που ήρθαν πριν είναι έτοιμο το mic (fix για "πρέπει να απομακρυνθώ και να ξαναπλησιάσω")
+let pendingOffers = [];
 
 const peers = new Map();
 
@@ -197,11 +200,21 @@ async function onLinkSuccess(message) {
         updateKeyButtonLabels();
         setupLocalAnalyser();
 
-        // ✅ ΝΕΟ: Αν είχε έρθει proximity update ενώ περιμέναμε το mic, επεξεργάσου το τώρα
+        // ✅ Αν είχε έρθει proximity update ενώ περιμέναμε το mic, επεξεργάσου το τώρα
         if (pendingProximityUpdate) {
             console.log('✓ Processing queued proximity update');
             handleProximityUpdate(pendingProximityUpdate);
             pendingProximityUpdate = null;
+        }
+
+        // ✅ ΝΕΟ: Επεξεργάσου τυχόν offers που ήρθαν πριν είμαστε έτοιμοι
+        if (pendingOffers.length > 0) {
+            console.log(`✓ Processing ${pendingOffers.length} queued offer(s)`);
+            const offersToProcess = [...pendingOffers];
+            pendingOffers = [];
+            for (const offerMsg of offersToProcess) {
+                await handleOffer(offerMsg);
+            }
         }
 
     } catch (err) {
@@ -211,7 +224,7 @@ async function onLinkSuccess(message) {
 }
 
 // ============================================
-// ✅ ΝΕΟ: Local Speaking Detection (για nametag indicator)
+// Local Speaking Detection (για nametag indicator)
 // ============================================
 function setupLocalAnalyser() {
     const ctx = getAudioContext();
@@ -261,7 +274,7 @@ function sendSpeakingStatus(speaking) {
 // Proximity Update
 // ============================================
 function handleProximityUpdate(nearbyPlayers) {
-    // ✅ ΝΕΟ: Αν το mic δεν είναι έτοιμο ακόμα, αποθήκευσε το update για αργότερα
+    // ✅ Αν το mic δεν είναι έτοιμο ακόμα, αποθήκευσε το update για αργότερα
     if (!localStream) {
         console.warn('⏳ Mic not ready yet, queueing proximity update');
         pendingProximityUpdate = nearbyPlayers;
@@ -286,7 +299,7 @@ function handleProximityUpdate(nearbyPlayers) {
 // WebRTC Connection Logic
 // ============================================
 function initiateConnection(targetUuid, targetName) {
-    // ✅ ΝΕΟ: Ασφάλεια - μην προχωράς αν δεν υπάρχει ακόμα το local stream
+    // ✅ Ασφάλεια - μην προχωράς αν δεν υπάρχει ακόμα το local stream
     if (!localStream) {
         console.warn('⏳ localStream not ready, cannot initiate connection to', targetName);
         return;
@@ -323,7 +336,7 @@ function createPeerConnection(targetUuid, targetName) {
         const source = ctx.createMediaStreamSource(remoteStream);
         const compressor = ctx.createDynamicsCompressor();
         const analyser = ctx.createAnalyser();
-        const filterNode = ctx.createBiquadFilter(); // ✅ ΝΕΟ: wall occlusion filter
+        const filterNode = ctx.createBiquadFilter(); // wall occlusion filter
         const gainNode = ctx.createGain();
         const pannerNode = ctx.createStereoPanner();
 
@@ -414,9 +427,10 @@ async function createAndSendOffer(targetUuid, pc) {
 async function handleOffer(message) {
     const { fromUuid, fromName, offer } = message;
 
-    // ✅ ΝΕΟ: Ασφάλεια - αν δεν έχουμε ακόμα mic, αγνόησε προσωρινά το offer
+    // ✅ Αν δεν έχουμε ακόμα mic, αποθήκευσε το offer για αργότερα αντί να το πετάξεις
     if (!localStream) {
-        console.warn('⏳ localStream not ready, cannot handle offer from', fromName);
+        console.warn('⏳ localStream not ready, queueing offer from', fromName);
+        pendingOffers.push(message);
         return;
     }
 
@@ -526,7 +540,7 @@ function updatePeerAudio(uuid, distance, angle, occluded) {
         }
     }
 
-    // ✅ ΝΕΟ: Εφαρμογή/αφαίρεση muffled εφέ
+    // Εφαρμογή/αφαίρεση muffled εφέ
     if (peerData.filterNode) {
         const targetFreq = occluded ? OCCLUDED_FREQ : CLEAR_FREQ;
         peerData.filterNode.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
