@@ -302,7 +302,7 @@
 
         .deafen-toggle {
             border-color: #ff9f43;
-            margin-bottom: 1.25rem;
+            margin-bottom: 0.75rem;
         }
 
         .deafen-toggle:hover { background: #ff9f43; border-color: #ff9f43; }
@@ -313,13 +313,29 @@
             color: #ff9f43;
         }
 
+        /* ✅ ΝΕΟ: Noise Suppression toggle button */
+        .noise-toggle {
+            border-color: #3ecf8e;
+            margin-bottom: 1.25rem;
+        }
+
+        .noise-toggle:hover { background: #3ecf8e; border-color: #3ecf8e; }
+
+        .noise-toggle.active {
+            background: rgba(62, 207, 142, 0.15);
+            border-color: #3ecf8e;
+            color: #3ecf8e;
+        }
+
         .volume-section {
             background: var(--bg1);
             border: 1px solid var(--border-subtle);
             border-radius: var(--roundness);
             padding: 1rem 1.1rem;
-            margin-bottom: 1.75rem;
+            margin-bottom: 1.25rem;
         }
+
+        .volume-section:last-of-type { margin-bottom: 1.75rem; }
 
         .volume-label-row {
             display: flex;
@@ -332,7 +348,7 @@
 
         .volume-label-row span.value { color: var(--accent1); font-weight: 700; }
 
-        #masterVolumeSlider {
+        #masterVolumeSlider, #gateThresholdSlider {
             -webkit-appearance: none;
             appearance: none;
             width: 100%;
@@ -345,7 +361,7 @@
             border: none;
         }
 
-        #masterVolumeSlider::-webkit-slider-thumb {
+        #masterVolumeSlider::-webkit-slider-thumb, #gateThresholdSlider::-webkit-slider-thumb {
             -webkit-appearance: none;
             width: 16px; height: 16px;
             border-radius: 50%;
@@ -355,9 +371,9 @@
             transition: transform var(--transition-std);
         }
 
-        #masterVolumeSlider::-webkit-slider-thumb:hover { transform: scale(1.15); }
+        #masterVolumeSlider::-webkit-slider-thumb:hover, #gateThresholdSlider::-webkit-slider-thumb:hover { transform: scale(1.15); }
 
-        #masterVolumeSlider::-moz-range-thumb {
+        #masterVolumeSlider::-moz-range-thumb, #gateThresholdSlider::-moz-range-thumb {
             width: 16px; height: 16px;
             border-radius: 50%;
             background: var(--accent1);
@@ -366,10 +382,19 @@
             box-shadow: 0 0 8px var(--accent2-transp);
         }
 
-        #masterVolumeSlider::-moz-range-track {
+        #masterVolumeSlider::-moz-range-track, #gateThresholdSlider::-moz-range-track {
             height: 5px;
             border-radius: 3px;
             background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* ✅ ΝΕΟ: Μικρό επεξηγηματικό κείμενο κάτω από το gate threshold slider */
+        .slider-hint {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+            text-align: left;
+            opacity: 0.75;
         }
 
         .nearby-title {
@@ -598,12 +623,25 @@
 
             <button class="deafen-toggle" id="deafenToggleBtn" onclick="toggleDeafen()">🙉 Κλείσιμο Ήχου (Deafen)</button>
 
+            <!-- ✅ ΝΕΟ: Noise Suppression Toggle Button -->
+            <button class="noise-toggle active" id="noiseSuppressionBtn">🧹 Μείωση Θορύβου: Ενεργή</button>
+
             <div class="volume-section">
                 <div class="volume-label-row">
                     <span>🔊 Γενική Ένταση</span>
                     <span class="value" id="volumeValueDisplay">100%</span>
                 </div>
                 <input type="range" id="masterVolumeSlider" min="0" max="100" value="100">
+            </div>
+
+            <!-- ✅ ΝΕΟ: Gate Threshold Slider -->
+            <div class="volume-section">
+                <div class="volume-label-row">
+                    <span>🎚️ Ευαισθησία Noise Gate</span>
+                    <span class="value" id="gateThresholdValueDisplay">10</span>
+                </div>
+                <input type="range" id="gateThresholdSlider" min="0" max="50" step="1" value="10">
+                <div class="slider-hint">Χαμηλότερη τιμή = πιο ευαίσθητο μικρόφωνο (ανοίγει πιο εύκολα)</div>
             </div>
 
             <div class="nearby-title">Κοντινοί Παίκτες</div>

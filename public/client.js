@@ -18,8 +18,20 @@ const ICE_SERVERS = {
 };
 
 const SPEAKING_THRESHOLD = 15;
-const OCCLUDED_FREQ = 700;   // Hz — συχνότητα όταν υπάρχει τοίχος (πνιγμένος ήχος)
-const CLEAR_FREQ = 20000;    // Hz — συχνότητα όταν ΔΕΝ υπάρχει τοίχος (καμία επίδραση)
+const OCCLUDED_FREQ = 700;
+const CLEAR_FREQ = 20000;
+
+// ✅ ΝΕΟ: Μειωμένη ένταση stereo panning (0 = mono, 1 = full stereo extremes)
+const PAN_INTENSITY = 0.6;
+
+// ✅ ΝΕΟ: Noise Gate ρυθμίσεις
+// ✅ ΑΛΛΑΓΗ: Το GATE_THRESHOLD έγινε per-player ρυθμιζόμενο μέσω slider + localStorage
+let noiseGateThreshold = parseFloat(localStorage.getItem('vc_gateThreshold'));
+if (isNaN(noiseGateThreshold)) noiseGateThreshold = 10;
+
+const GATE_ATTACK = 0.01;        // πόσο γρήγορα ανοίγει η πύλη (sec)
+const GATE_RELEASE = 0.15;       // πόσο γρήγορα κλείνει η πύλη (sec)
+const GATE_CLOSED_GAIN = 0.05;   // δεν κλείνει τελείως στο 0 — πιο φυσικός ήχος
 
 // ============================================
 // STATE
@@ -43,16 +55,21 @@ let listeningForKey = null;
 let masterVolume = parseFloat(localStorage.getItem('vc_masterVolume'));
 if (isNaN(masterVolume)) masterVolume = 1.0;
 
-// ✅ Local speaking detection (για nametag indicator)
 let localAnalyser = null;
 let localDataArray = null;
 let localSpeaking = false;
 
-// ✅ Κρατάει proximity update μέχρι να είναι έτοιμο το mic (fix για race condition)
 let pendingProximityUpdate = null;
-
-// ✅ ΝΕΟ: Κρατάει offers που ήρθαν πριν είναι έτοιμο το mic (fix για "πρέπει να απομακρυνθώ και να ξαναπλησιάσω")
 let pendingOffers = [];
+
+// ✅ ΝΕΟ: Noise Suppression state
+let noiseSuppressionEnabled = JSON.parse(localStorage.getItem('vc_noiseSuppression') ?? 'true');
+let nsHighpass = null;
+let nsCompressor = null;
+let nsAnalyser = null;
+let nsDataArray = null;
+let nsGateGain = null;
+let processedStream = null; // ✅ Το "καθαρισμένο" outgoing stream που στέλνεται στους peers
 
 const peers = new Map();
 
@@ -76,6 +93,11 @@ const pttHint = document.getElementById('pttHint');
 const micStatusEl = document.getElementById('micStatus');
 const muteKeyBtn = document.getElementById('muteKeyBtn');
 const pttKeyBtn = document.getElementById('pttKeyBtn');
+const noiseSuppressionBtn = document.getElementById('noiseSuppressionBtn'); // ✅ ΝΕΟ
+
+// ✅ ΝΕΟ: DOM elements για το gate threshold slider
+const gateThresholdSlider = document.getElementById('gateThresholdSlider');
+const gateThresholdValueDisplay = document.getElementById('gateThresholdValueDisplay');
 
 codeInput.addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase(); });
 codeInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') submitLinkCode(); });
@@ -98,6 +120,26 @@ function setMasterVolume(value) {
     masterVolume = value;
     localStorage.setItem('vc_masterVolume', value);
     if (masterGainNode && !isDeafened) masterGainNode.gain.value = value;
+}
+
+// ============================================
+// ✅ ΝΕΟ: Gate Threshold Slider (per-player ρύθμιση ευαισθησίας)
+// ============================================
+if (gateThresholdSlider) {
+    // Slider range: 0 (πολύ ευαίσθητο, ανοίγει με το παραμικρό) - 50 (πολύ αναίσθητο, χρειάζεται δυνατή φωνή)
+    gateThresholdSlider.value = noiseGateThreshold;
+    if (gateThresholdValueDisplay) gateThresholdValueDisplay.textContent = noiseGateThreshold;
+
+    gateThresholdSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        setNoiseGateThreshold(val);
+        if (gateThresholdValueDisplay) gateThresholdValueDisplay.textContent = val;
+    });
+}
+
+function setNoiseGateThreshold(value) {
+    noiseGateThreshold = value;
+    localStorage.setItem('vc_gateThreshold', value);
 }
 
 // ============================================
@@ -200,14 +242,16 @@ async function onLinkSuccess(message) {
         updateKeyButtonLabels();
         setupLocalAnalyser();
 
-        // ✅ Αν είχε έρθει proximity update ενώ περιμέναμε το mic, επεξεργάσου το τώρα
+        // ✅ ΝΕΟ: Στήσε το noise suppression graph ΠΡΙΝ δημιουργηθούν peer connections
+        setupNoiseSuppression();
+        updateNoiseSuppressionButton();
+
         if (pendingProximityUpdate) {
             console.log('✓ Processing queued proximity update');
             handleProximityUpdate(pendingProximityUpdate);
             pendingProximityUpdate = null;
         }
 
-        // ✅ ΝΕΟ: Επεξεργάσου τυχόν offers που ήρθαν πριν είμαστε έτοιμοι
         if (pendingOffers.length > 0) {
             console.log(`✓ Processing ${pendingOffers.length} queued offer(s)`);
             const offersToProcess = [...pendingOffers];
@@ -224,6 +268,87 @@ async function onLinkSuccess(message) {
 }
 
 // ============================================
+// ✅ ΝΕΟ: Noise Suppression (Smart Noise Gate + Filter)
+// ============================================
+function setupNoiseSuppression() {
+    const ctx = getAudioContext();
+    const source = ctx.createMediaStreamSource(localStream);
+
+    // Κόβει χαμηλές συχνότητες (βόμβος, fan noise, hum)
+    nsHighpass = ctx.createBiquadFilter();
+    nsHighpass.type = 'highpass';
+    nsHighpass.frequency.value = 100;
+
+    // Σταθεροποιεί τα επίπεδα ήχου πριν την πύλη
+    nsCompressor = ctx.createDynamicsCompressor();
+    nsCompressor.threshold.setValueAtTime(-45, ctx.currentTime);
+    nsCompressor.knee.setValueAtTime(30, ctx.currentTime);
+    nsCompressor.ratio.setValueAtTime(8, ctx.currentTime);
+    nsCompressor.attack.setValueAtTime(0.003, ctx.currentTime);
+    nsCompressor.release.setValueAtTime(0.1, ctx.currentTime);
+
+    // Analyser για να αποφασίζει πότε να ανοίγει/κλείνει η πύλη
+    nsAnalyser = ctx.createAnalyser();
+    nsAnalyser.fftSize = 512;
+    nsDataArray = new Uint8Array(nsAnalyser.frequencyBinCount);
+
+    // Η ίδια η "πύλη" θορύβου
+    nsGateGain = ctx.createGain();
+    nsGateGain.gain.value = noiseSuppressionEnabled ? GATE_CLOSED_GAIN : 1;
+
+    const destination = ctx.createMediaStreamDestination();
+
+    source.connect(nsHighpass);
+    nsHighpass.connect(nsCompressor);
+    nsCompressor.connect(nsAnalyser);
+    nsCompressor.connect(nsGateGain);
+    nsGateGain.connect(destination);
+
+    processedStream = destination.stream;
+
+    requestAnimationFrame(processNoiseGate);
+}
+
+function processNoiseGate() {
+    if (nsAnalyser && nsDataArray && audioCtx) {
+        nsAnalyser.getByteFrequencyData(nsDataArray);
+        let sum = 0;
+        for (let i = 0; i < nsDataArray.length; i++) sum += nsDataArray[i];
+        const avg = sum / nsDataArray.length;
+
+        if (!noiseSuppressionEnabled) {
+            nsGateGain.gain.setTargetAtTime(1, audioCtx.currentTime, GATE_ATTACK);
+        } else if (avg > noiseGateThreshold) { // ✅ ΑΛΛΑΓΗ: χρήση της per-player ρυθμιζόμενης τιμής
+            nsGateGain.gain.setTargetAtTime(1, audioCtx.currentTime, GATE_ATTACK);
+        } else {
+            nsGateGain.gain.setTargetAtTime(GATE_CLOSED_GAIN, audioCtx.currentTime, GATE_RELEASE);
+        }
+    }
+    requestAnimationFrame(processNoiseGate);
+}
+
+function toggleNoiseSuppression() {
+    noiseSuppressionEnabled = !noiseSuppressionEnabled;
+    localStorage.setItem('vc_noiseSuppression', JSON.stringify(noiseSuppressionEnabled));
+    updateNoiseSuppressionButton();
+}
+
+function updateNoiseSuppressionButton() {
+    if (!noiseSuppressionBtn) return;
+    if (noiseSuppressionEnabled) {
+        noiseSuppressionBtn.textContent = '🧹 Μείωση Θορύβου: Ενεργή';
+        noiseSuppressionBtn.classList.add('active');
+    } else {
+        noiseSuppressionBtn.textContent = '🧹 Μείωση Θορύβου: Ανενεργή';
+        noiseSuppressionBtn.classList.remove('active');
+    }
+}
+
+if (noiseSuppressionBtn) {
+    noiseSuppressionBtn.addEventListener('click', toggleNoiseSuppression);
+}
+
+// ============================================
 // Local Speaking Detection (για nametag indicator)
 // ============================================
 function setupLocalAnalyser() {
@@ -233,7 +358,6 @@ function setupLocalAnalyser() {
     localAnalyser.fftSize = 512;
     localDataArray = new Uint8Array(localAnalyser.frequencyBinCount);
     source.connect(localAnalyser);
-    // ΔΕΝ συνδέουμε στο destination — δεν θέλουμε να ακούμε τον εαυτό μας
 }
 
 function isMicActuallyActive() {
@@ -274,7 +398,6 @@ function sendSpeakingStatus(speaking) {
 // Proximity Update
 // ============================================
 function handleProximityUpdate(nearbyPlayers) {
-    // ✅ Αν το mic δεν είναι έτοιμο ακόμα, αποθήκευσε το update για αργότερα
     if (!localStream) {
         console.warn('⏳ Mic not ready yet, queueing proximity update');
         pendingProximityUpdate = nearbyPlayers;
@@ -299,7 +422,6 @@ function handleProximityUpdate(nearbyPlayers) {
 // WebRTC Connection Logic
 // ============================================
 function initiateConnection(targetUuid, targetName) {
-    // ✅ Ασφάλεια - μην προχωράς αν δεν υπάρχει ακόμα το local stream
     if (!localStream) {
         console.warn('⏳ localStream not ready, cannot initiate connection to', targetName);
         return;
@@ -312,7 +434,9 @@ function initiateConnection(targetUuid, targetName) {
 function createPeerConnection(targetUuid, targetName) {
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    // ✅ ΑΛΛΑΓΗ: Στέλνουμε το "καθαρισμένο" (noise-suppressed) stream αντί για το raw
+    const outgoingStream = processedStream || localStream;
+    outgoingStream.getTracks().forEach(track => pc.addTrack(track, outgoingStream));
 
     pc.ontrack = (event) => {
         const remoteStream = event.streams[0];
@@ -336,7 +460,7 @@ function createPeerConnection(targetUuid, targetName) {
         const source = ctx.createMediaStreamSource(remoteStream);
         const compressor = ctx.createDynamicsCompressor();
         const analyser = ctx.createAnalyser();
-        const filterNode = ctx.createBiquadFilter(); // wall occlusion filter
+        const filterNode = ctx.createBiquadFilter();
         const gainNode = ctx.createGain();
         const pannerNode = ctx.createStereoPanner();
 
@@ -349,9 +473,8 @@ function createPeerConnection(targetUuid, targetName) {
         analyser.fftSize = 512;
 
         filterNode.type = 'lowpass';
-        filterNode.frequency.value = CLEAR_FREQ; // default: καμία επίδραση
+        filterNode.frequency.value = CLEAR_FREQ;
 
-        // Audio graph: source -> compressor -> [analyser tap] -> filter -> gain -> panner -> master
         source.connect(compressor);
         compressor.connect(analyser);
         compressor.connect(filterNode);
@@ -427,7 +550,6 @@ async function createAndSendOffer(targetUuid, pc) {
 async function handleOffer(message) {
     const { fromUuid, fromName, offer } = message;
 
-    // ✅ Αν δεν έχουμε ακόμα mic, αποθήκευσε το offer για αργότερα αντί να το πετάξεις
     if (!localStream) {
         console.warn('⏳ localStream not ready, queueing offer from', fromName);
         pendingOffers.push(message);
@@ -534,13 +656,13 @@ function updatePeerAudio(uuid, distance, angle, occluded) {
 
     if (peerData.pannerNode) {
         if (ENABLE_3D_AUDIO && typeof angle === 'number') {
-            peerData.pannerNode.pan.value = Math.sin(angle * Math.PI / 180);
+            // ✅ ΑΛΛΑΓΗ: Πολλαπλασιασμός με PAN_INTENSITY για πιο ήπιο stereo effect
+            peerData.pannerNode.pan.value = Math.sin(angle * Math.PI / 180) * PAN_INTENSITY;
         } else {
             peerData.pannerNode.pan.value = 0;
         }
     }
 
-    // Εφαρμογή/αφαίρεση muffled εφέ
     if (peerData.filterNode) {
         const targetFreq = occluded ? OCCLUDED_FREQ : CLEAR_FREQ;
         peerData.filterNode.frequency.setTargetAtTime(targetFreq, audioCtx.currentTime, 0.1);
