@@ -48,6 +48,9 @@ let localAnalyser = null;
 let localDataArray = null;
 let localSpeaking = false;
 
+// ✅ ΝΕΟ: Κρατάει proximity update μέχρι να είναι έτοιμο το mic (fix για race condition)
+let pendingProximityUpdate = null;
+
 const peers = new Map();
 
 // ============================================
@@ -192,7 +195,14 @@ async function onLinkSuccess(message) {
 
         setMicMode(micMode);
         updateKeyButtonLabels();
-        setupLocalAnalyser(); // ✅ ΝΕΟ
+        setupLocalAnalyser();
+
+        // ✅ ΝΕΟ: Αν είχε έρθει proximity update ενώ περιμέναμε το mic, επεξεργάσου το τώρα
+        if (pendingProximityUpdate) {
+            console.log('✓ Processing queued proximity update');
+            handleProximityUpdate(pendingProximityUpdate);
+            pendingProximityUpdate = null;
+        }
 
     } catch (err) {
         console.error('Microphone access denied:', err.name, err.message);
@@ -251,6 +261,13 @@ function sendSpeakingStatus(speaking) {
 // Proximity Update
 // ============================================
 function handleProximityUpdate(nearbyPlayers) {
+    // ✅ ΝΕΟ: Αν το mic δεν είναι έτοιμο ακόμα, αποθήκευσε το update για αργότερα
+    if (!localStream) {
+        console.warn('⏳ Mic not ready yet, queueing proximity update');
+        pendingProximityUpdate = nearbyPlayers;
+        return;
+    }
+
     const nearbyUuids = new Set(nearbyPlayers.map(p => p.uuid));
 
     for (const [uuid] of peers.entries()) {
@@ -269,6 +286,11 @@ function handleProximityUpdate(nearbyPlayers) {
 // WebRTC Connection Logic
 // ============================================
 function initiateConnection(targetUuid, targetName) {
+    // ✅ ΝΕΟ: Ασφάλεια - μην προχωράς αν δεν υπάρχει ακόμα το local stream
+    if (!localStream) {
+        console.warn('⏳ localStream not ready, cannot initiate connection to', targetName);
+        return;
+    }
     const pc = createPeerConnection(targetUuid, targetName);
     const shouldInitiate = myUuid < targetUuid;
     if (shouldInitiate) createAndSendOffer(targetUuid, pc);
@@ -352,6 +374,10 @@ function createPeerConnection(targetUuid, targetName) {
         console.log(`Connection with ${targetName}: ${pc.connectionState}`);
     };
 
+    pc.oniceconnectionstatechange = () => {
+        console.log(`[${targetName}] ICE state: ${pc.iceConnectionState}`);
+    };
+
     peers.set(targetUuid, {
         peerConnection: pc,
         audioElement: null,
@@ -387,6 +413,13 @@ async function createAndSendOffer(targetUuid, pc) {
 
 async function handleOffer(message) {
     const { fromUuid, fromName, offer } = message;
+
+    // ✅ ΝΕΟ: Ασφάλεια - αν δεν έχουμε ακόμα mic, αγνόησε προσωρινά το offer
+    if (!localStream) {
+        console.warn('⏳ localStream not ready, cannot handle offer from', fromName);
+        return;
+    }
+
     let peerData = peers.get(fromUuid);
     let pc;
 
