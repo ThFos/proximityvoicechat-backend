@@ -37,6 +37,39 @@ server.on('upgrade', (request, socket, head) => {
     }
 });
 
+// ============================================
+// ✅ ΝΕΟ: WebSocket Heartbeat (ping/pong)
+// ============================================
+// Αποτρέπει "ghost" connections που μένουν ανοιχτές στη μνήμη
+// χωρίς να πυροδοτούν ποτέ το 'close' event (π.χ. λόγω proxy
+// idle timeout, κομμένο internet στον client, κτλ.)
+function setupHeartbeat(wss, label) {
+    wss.on('connection', (ws) => {
+        ws.isAlive = true;
+        ws.on('pong', () => {
+            ws.isAlive = true;
+        });
+    });
+
+    const interval = setInterval(() => {
+        wss.clients.forEach((ws) => {
+            if (ws.isAlive === false) {
+                console.log(`💀 [${label}] Terminating dead connection (no pong response)`);
+                return ws.terminate();
+            }
+            ws.isAlive = false;
+            ws.ping();
+        });
+    }, 30000); // κάθε 30 δευτερόλεπτα
+
+    wss.on('close', () => clearInterval(interval));
+
+    return interval;
+}
+
+setupHeartbeat(minecraftWSS, 'minecraft');
+setupHeartbeat(webClientWSS, 'voice');
+
 // ============ MINECRAFT PLUGIN CONNECTION ============
 minecraftWSS.on('connection', (ws) => {
     console.log('✓ Minecraft server connected');
@@ -178,7 +211,7 @@ webClientWSS.on('connection', (ws) => {
             webClients.delete(ws);
             console.log(`Client disconnected: ${clientData.name}`);
 
-            // ✅ ΝΕΟ: Όταν αποσυνδέεται ένας παίκτης, ξαναϋπολόγισε proximity
+            // Όταν αποσυνδέεται ένας παίκτης, ξαναϋπολόγισε proximity
             // ώστε οι υπόλοιποι να μάθουν άμεσα ότι αυτός έφυγε
             calculateProximityAndNotify();
         }
@@ -222,7 +255,7 @@ function handleLinkCode(ws, code) {
 
     console.log(`✓ Linked: ${linkData.name}`);
 
-    // ✅ ΝΕΟ: Μόλις συνδεθεί κάποιος, ξαναϋπολόγισε proximity για όλους
+    // Μόλις συνδεθεί κάποιος, ξαναϋπολόγισε proximity για όλους
     // ώστε όποιος ήταν ήδη κοντά του να ενημερωθεί άμεσα (fix για race condition)
     calculateProximityAndNotify();
 }
@@ -256,7 +289,6 @@ function calculateProximityAndNotify() {
     for (let i = 0; i < players.length; i++) {
         const [uuid1, loc1] = players[i];
 
-        // Αν ο uuid1 δεν έχει συνδέσει τον web client του, μη χάνεις χρόνο
         const ws1 = uuidToWs.get(uuid1);
         if (!ws1 || ws1.readyState !== ws1.OPEN) continue;
 
@@ -269,12 +301,6 @@ function calculateProximityAndNotify() {
 
             if (loc1.world !== loc2.world) continue;
 
-            // ✅ ΝΕΟ / ΚΡΙΣΙΜΗ ΔΙΟΡΘΩΣΗ:
-            // Μην συμπεριλαμβάνεις παίκτες που ΔΕΝ έχουν συνδέσει ακόμα τον web client τους.
-            // Χωρίς αυτό, ο client Α προσπαθεί να στείλει WebRTC offer σε παίκτη Β που
-            // δεν είναι ακόμα συνδεδεμένος στο /voice websocket, το offer χάνεται σιωπηλά,
-            // και επειδή το peers.has(B) γίνεται ήδη true, ο Α ΔΕΝ ξαναπροσπαθεί ποτέ -
-            // μέχρι ο Β να βγει εκτός εμβέλειας και να ξαναμπεί.
             const ws2 = uuidToWs.get(uuid2);
             if (!ws2 || ws2.readyState !== ws2.OPEN) continue;
 
