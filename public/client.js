@@ -7,15 +7,44 @@ let MAX_DISTANCE = 20;
 let VOLUME_CURVE = 'linear';
 let ENABLE_3D_AUDIO = true;
 
-const ICE_SERVERS = {
+// ✅ ΝΕΟ: Dynamic TURN credentials από Cloudflare Calls
+const TURN_CREDENTIALS_ENDPOINT = 'https://voice.pgglegacy.gr/turn-credentials';
+
+// Default fallback (μόνο STUN) μέχρι να φορτώσουν τα TURN credentials
+let ICE_SERVERS = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        { urls: 'stun:stun1.l.google.com:19302' }
     ]
 };
+
+async function fetchIceServers() {
+    try {
+        const response = await fetch(TURN_CREDENTIALS_ENDPOINT);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+        const turnServer = await response.json();
+
+        ICE_SERVERS = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                turnServer
+            ]
+        };
+
+        console.log('✓ TURN credentials loaded from Cloudflare');
+    } catch (err) {
+        console.error('⚠️ Could not fetch TURN credentials, using STUN only:', err);
+    }
+}
+
+// Φόρτωσε τα credentials αμέσως μόλις ανοίξει η σελίδα
+fetchIceServers();
+
+// Τα credentials λήγουν μετά από 24 ώρες (ttl: 86400 στο backend) —
+// ανανέωσέ τα κάθε 23 ώρες ώστε να μην "σπάσει" ποτέ μια ανοιχτή σελίδα
+setInterval(fetchIceServers, 23 * 60 * 60 * 1000);
 
 const SPEAKING_THRESHOLD = 15;
 const OCCLUDED_FREQ = 700;

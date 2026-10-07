@@ -7,6 +7,19 @@ const server = http.createServer(app);
 
 app.use(express.static('public'));
 
+// ============================================
+// ✅ ΝΕΟ: CORS για το /turn-credentials endpoint
+// ============================================
+// Επιτρέπει στο client.js (που τρέχει στο pgglegacy.gr) να κάνει
+// fetch προς το voice.pgglegacy.gr (διαφορετικό subdomain = cross-origin)
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', 'https://pgglegacy.gr');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') return res.sendStatus(200);
+    next();
+});
+
 const minecraftWSS = new WebSocketServer({ noServer: true });
 const webClientWSS = new WebSocketServer({ noServer: true });
 
@@ -38,11 +51,8 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 // ============================================
-// ✅ ΝΕΟ: WebSocket Heartbeat (ping/pong)
+// WebSocket Heartbeat (ping/pong)
 // ============================================
-// Αποτρέπει "ghost" connections που μένουν ανοιχτές στη μνήμη
-// χωρίς να πυροδοτούν ποτέ το 'close' event (π.χ. λόγω proxy
-// idle timeout, κομμένο internet στον client, κτλ.)
 function setupHeartbeat(wss, label) {
     wss.on('connection', (ws) => {
         ws.isAlive = true;
@@ -60,7 +70,7 @@ function setupHeartbeat(wss, label) {
             ws.isAlive = false;
             ws.ping();
         });
-    }, 30000); // κάθε 30 δευτερόλεπτα
+    }, 30000);
 
     wss.on('close', () => clearInterval(interval));
 
@@ -69,6 +79,49 @@ function setupHeartbeat(wss, label) {
 
 setupHeartbeat(minecraftWSS, 'minecraft');
 setupHeartbeat(webClientWSS, 'voice');
+
+// ============================================
+// ✅ ΝΕΟ: Cloudflare TURN Credentials Endpoint
+// ============================================
+// Ο client (browser) καλεί αυτό το endpoint για να πάρει
+// προσωρινά (ephemeral) TURN credentials, χωρίς να εκθέτει
+// ποτέ το πραγματικό API token μας στον browser.
+app.get('/turn-credentials', async (req, res) => {
+    const keyId = process.env.CF_TURN_KEY_ID;
+    const apiToken = process.env.CF_TURN_API_TOKEN;
+
+    if (!keyId || !apiToken) {
+        console.error('❌ Missing CF_TURN_KEY_ID or CF_TURN_API_TOKEN env vars');
+        return res.status(500).json({ error: 'TURN server not configured' });
+    }
+
+    try {
+        const cfResponse = await fetch(
+            `https://rtc.live.cloudflare.com/v1/turn/keys/${keyId}/credentials/generate`,
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${apiToken}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ttl: 86400 }) // ✅ 24 ώρες διάρκεια ζωής
+            }
+        );
+
+        if (!cfResponse.ok) {
+            const errText = await cfResponse.text();
+            console.error('❌ Cloudflare TURN API error:', cfResponse.status, errText);
+            return res.status(502).json({ error: 'Failed to generate TURN credentials' });
+        }
+
+        const data = await cfResponse.json();
+        // Η Cloudflare επιστρέφει { iceServers: { urls: [...], username, credential } }
+        res.json(data.iceServers);
+    } catch (err) {
+        console.error('❌ Error fetching TURN credentials:', err);
+        res.status(500).json({ error: 'Internal error generating TURN credentials' });
+    }
+});
 
 // ============ MINECRAFT PLUGIN CONNECTION ============
 minecraftWSS.on('connection', (ws) => {
@@ -210,9 +263,6 @@ webClientWSS.on('connection', (ws) => {
             uuidToWs.delete(clientData.uuid);
             webClients.delete(ws);
             console.log(`Client disconnected: ${clientData.name}`);
-
-            // Όταν αποσυνδέεται ένας παίκτης, ξαναϋπολόγισε proximity
-            // ώστε οι υπόλοιποι να μάθουν άμεσα ότι αυτός έφυγε
             calculateProximityAndNotify();
         }
     });
@@ -254,9 +304,6 @@ function handleLinkCode(ws, code) {
     }
 
     console.log(`✓ Linked: ${linkData.name}`);
-
-    // Μόλις συνδεθεί κάποιος, ξαναϋπολόγισε proximity για όλους
-    // ώστε όποιος ήταν ήδη κοντά του να ενημερωθεί άμεσα (fix για race condition)
     calculateProximityAndNotify();
 }
 
